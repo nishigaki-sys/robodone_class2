@@ -55,23 +55,10 @@
         }
         .timing-april { background-color: #ec4899; } /* Pink */
         .timing-october { background-color: #818cf8; } /* Indigo */
-
-        @media print {
-            body * {
-                visibility: hidden;
-            }
-            #pdf-export-area, #pdf-export-area * {
-                visibility: visible;
-            }
-            #pdf-export-area {
-                position: absolute;
-                left: 0;
-                top: 0;
-            }
-        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
+
     <div id="pdf-loader" class="fixed inset-0 bg-black bg-opacity-60 z-[100] flex items-center justify-center hidden">
         <div class="bg-white p-6 rounded-lg shadow-xl flex items-center gap-4">
             <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -951,6 +938,59 @@
                 reader.readAsText(file);
                 e.target.value = '';
             });
+            
+            pdfExportBtn.addEventListener('click', async () => {
+                pdfLoader.classList.remove('hidden');
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({
+                    orientation: 'l', // landscape
+                    unit: 'mm',
+                    format: 'a4'
+                });
+
+                const dashboardEl = document.getElementById('dashboard');
+                const timetableContainerEl = document.getElementById('timetable-container');
+
+                // Temporarily switch to 'all' view for capture
+                const originalClassroomId = currentClassroomId;
+                switchClassroom('all', true);
+
+                // Capture dashboard
+                const canvasDashboard = await html2canvas(dashboardEl, { scale: 2 });
+                const imgDataDashboard = canvasDashboard.toDataURL('image/png');
+                
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const pageHeight = doc.internal.pageSize.getHeight();
+
+                const dashboardWidth = pageWidth - 20; // with margin
+                const dashboardHeight = (canvasDashboard.height * dashboardWidth) / canvasDashboard.width;
+                doc.addImage(imgDataDashboard, 'PNG', 10, 10, dashboardWidth, dashboardHeight);
+
+                // Capture timetable
+                const canvasTimetable = await html2canvas(timetableContainerEl, { scale: 2 });
+                const imgDataTimetable = canvasTimetable.toDataURL('image/png');
+                
+                const timetableWidth = pageWidth - 20;
+                const timetableHeight = (canvasTimetable.height * timetableWidth) / canvasTimetable.width;
+
+                let timetableY = 10 + dashboardHeight + 10;
+                if (timetableY + timetableHeight > pageHeight) {
+                    doc.addPage();
+                    timetableY = 10;
+                }
+                doc.addImage(imgDataTimetable, 'PNG', 10, timetableY, timetableWidth, timetableHeight);
+
+                const schoolName = schoolNameInput.value || '校舎名未設定';
+                const semesterName = semesters.find(s => s.id === currentSemesterId).name.replace(' ', '');
+                doc.save(`${schoolName}_${semesterName}.pdf`);
+                
+                // Switch back to original view
+                switchClassroom(originalClassroomId, true);
+                
+                pdfLoader.classList.add('hidden');
+            });
+
 
             schoolNameInput.addEventListener('input', saveData);
 
