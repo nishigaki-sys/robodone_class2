@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ロボ団 開講クラス設計</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body {
@@ -53,94 +55,121 @@
         }
         .timing-april { background-color: #ec4899; } /* Pink */
         .timing-october { background-color: #818cf8; } /* Indigo */
+
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #pdf-export-area, #pdf-export-area * {
+                visibility: visible;
+            }
+            #pdf-export-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+            }
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
-
-    <div class="container mx-auto p-4 md:p-8 max-w-screen-2xl">
-        <header class="text-center mb-6">
-            <h1 class="text-3xl md:text-4xl font-bold text-slate-900 flex items-center justify-center gap-2 flex-wrap">
-                ロボ団「<input type="text" id="schoolNameInput" placeholder="校舎名" class="bg-transparent text-center focus:outline-none focus:bg-slate-100 rounded-md p-1 w-48 border-b-2 border-slate-300 focus:border-blue-500">」開講クラス設計
-            </h1>
-        </header>
-
-        <!-- Dashboard -->
-        <div class="mb-8 bg-white p-6 rounded-2xl shadow-lg">
-            <h2 class="text-2xl font-bold text-slate-900 mb-4">クラスサマリー</h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
-                <div class="bg-blue-50 p-4 rounded-lg">
-                    <div class="text-sm font-semibold text-blue-800">総生徒数</div>
-                    <div id="totalStudents" class="text-3xl font-bold text-blue-600">0</div>
-                </div>
-                <div class="bg-green-50 p-4 rounded-lg">
-                    <div class="text-sm font-semibold text-green-800">総クラス数</div>
-                    <div id="totalClasses" class="text-3xl font-bold text-green-600">0</div>
-                </div>
-                <div class="bg-orange-50 p-4 rounded-lg">
-                    <div class="text-sm font-semibold text-orange-800">総空き枠数</div>
-                    <div id="totalAvailable" class="text-3xl font-bold text-orange-600">0</div>
-                </div>
-            </div>
-            <div class="border-t border-slate-200 pt-4 mb-6">
-                <h3 class="text-lg font-bold text-slate-800 mb-3">全クラス充足率</h3>
-                <div id="totalFulfillment">
-                    <!-- Total progress bar goes here -->
-                </div>
-            </div>
-            <div class="border-t border-slate-200 pt-4">
-              <h3 class="text-lg font-bold text-slate-800 mb-3">コース別状況</h3>
-              <div id="courseDashboard" class="space-y-3">
-                  <!-- Course stats will be generated here -->
-              </div>
-            </div>
+    <div id="pdf-loader" class="fixed inset-0 bg-black bg-opacity-60 z-[100] flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl flex items-center gap-4">
+            <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="text-lg font-semibold">PDFを作成中...</span>
         </div>
+    </div>
 
-        <div class="flex flex-col lg:flex-row gap-8">
-            <!-- 左側：操作パネル -->
-            <aside id="sidePanel" class="lg:w-1/4 xl:w-1/5">
-                <div class="bg-white p-6 rounded-2xl shadow-lg space-y-4">
-                    <!-- 学期切り替え -->
-                    <div>
-                        <div class="flex items-center justify-between mb-2">
-                            <h2 class="text-xl font-bold">学期</h2>
-                             <div class="flex gap-1">
-                                <button id="importBtn" class="px-3 py-1 bg-green-100 text-green-700 rounded-md text-xs hover:bg-green-200">インポート</button>
-                                <input type="file" id="importFile" class="hidden" accept=".json">
-                                <button id="exportBtn" class="px-3 py-1 bg-blue-100 text-blue-700 rounded-md text-xs hover:bg-blue-200">エクスポート</button>
-                                <button id="resetBtn" class="px-3 py-1 bg-red-100 text-red-700 rounded-md text-xs hover:bg-red-200">リセット</button>
+
+    <div id="main-content">
+        <div class="container mx-auto p-4 md:p-8 max-w-screen-2xl">
+            <header class="text-center mb-6">
+                <h1 class="text-3xl md:text-4xl font-bold text-slate-900 flex items-center justify-center gap-2 flex-wrap">
+                    ロボ団「<input type="text" id="schoolNameInput" placeholder="校舎名" class="bg-transparent text-center focus:outline-none focus:bg-slate-100 rounded-md p-1 w-48 border-b-2 border-slate-300 focus:border-blue-500">」開講クラス設計
+                </h1>
+            </header>
+
+            <!-- Dashboard -->
+            <div id="dashboard" class="mb-8 bg-white p-6 rounded-2xl shadow-lg">
+                <h2 class="text-2xl font-bold text-slate-900 mb-4">クラスサマリー</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <div class="text-sm font-semibold text-blue-800">総生徒数</div>
+                        <div id="totalStudents" class="text-3xl font-bold text-blue-600">0</div>
+                    </div>
+                    <div class="bg-green-50 p-4 rounded-lg">
+                        <div class="text-sm font-semibold text-green-800">総クラス数</div>
+                        <div id="totalClasses" class="text-3xl font-bold text-green-600">0</div>
+                    </div>
+                    <div class="bg-orange-50 p-4 rounded-lg">
+                        <div class="text-sm font-semibold text-orange-800">総空き枠数</div>
+                        <div id="totalAvailable" class="text-3xl font-bold text-orange-600">0</div>
+                    </div>
+                </div>
+                <div class="border-t border-slate-200 pt-4 mb-6">
+                    <h3 class="text-lg font-bold text-slate-800 mb-3">全クラス充足率</h3>
+                    <div id="totalFulfillment">
+                        <!-- Total progress bar goes here -->
+                    </div>
+                </div>
+                <div class="border-t border-slate-200 pt-4">
+                  <h3 class="text-lg font-bold text-slate-800 mb-3">コース別状況</h3>
+                  <div id="courseDashboard" class="space-y-3">
+                      <!-- Course stats will be generated here -->
+                  </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col lg:flex-row gap-8">
+                <!-- 左側：操作パネル -->
+                <aside id="sidePanel" class="lg:w-1/4 xl:w-1/5">
+                    <div class="bg-white p-6 rounded-2xl shadow-lg space-y-4">
+                        <!-- 学期切り替え -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <h2 class="text-xl font-bold">学期</h2>
+                                 <div class="flex gap-1">
+                                    <button id="importBtn" class="px-3 py-1 bg-green-100 text-green-700 rounded-md text-xs hover:bg-green-200">インポート</button>
+                                    <input type="file" id="importFile" class="hidden" accept=".json">
+                                    <button id="exportBtn" class="px-3 py-1 bg-blue-100 text-blue-700 rounded-md text-xs hover:bg-blue-200">エクスポート</button>
+                                    <button id="pdfExportBtn" class="px-3 py-1 bg-purple-100 text-purple-700 rounded-md text-xs hover:bg-purple-200">PDF</button>
+                                    <button id="resetBtn" class="px-3 py-1 bg-red-100 text-red-700 rounded-md text-xs hover:bg-red-200">リセット</button>
+                                </div>
+                            </div>
+                            <div id="semesterSelector" class="grid grid-cols-2 gap-2">
+                                <!-- Semester buttons will be generated here -->
                             </div>
                         </div>
-                        <div id="semesterSelector" class="grid grid-cols-2 gap-2">
-                            <!-- Semester buttons will be generated here -->
+
+                        <!-- 持ち越しクラス -->
+                        <div id="promotedSection">
+                            <h3 class="text-lg font-bold mb-3 text-blue-700 border-b pb-2">持ち越しクラス</h3>
+                            <div id="promotedBank" class="space-y-3 min-h-[50px]">
+                                <!-- Promoted classes will be inserted here -->
+                            </div>
+                        </div>
+
+                        <!-- 新規クラス -->
+                        <div>
+                            <h3 class="text-lg font-bold mb-3 border-b pb-2">新規クラス</h3>
+                            <div id="classBank" class="space-y-3">
+                                <!-- Draggable classes will be inserted here by JS -->
+                            </div>
                         </div>
                     </div>
+                </aside>
 
-                    <!-- 持ち越しクラス -->
-                    <div id="promotedSection">
-                        <h3 class="text-lg font-bold mb-3 text-blue-700 border-b pb-2">持ち越しクラス</h3>
-                        <div id="promotedBank" class="space-y-3 min-h-[50px]">
-                            <!-- Promoted classes will be inserted here -->
+                <!-- 右側：時間割 -->
+                <main class="flex-1">
+                    <div id="timetable-container" class="bg-white rounded-2xl shadow-lg overflow-auto" style="max-height: 75vh;">
+                        <div id="timetable" class="grid relative min-w-[1000px]">
+                            <!-- Timetable grid will be generated by JS -->
                         </div>
                     </div>
-
-                    <!-- 新規クラス -->
-                    <div>
-                        <h3 class="text-lg font-bold mb-3 border-b pb-2">新規クラス</h3>
-                        <div id="classBank" class="space-y-3">
-                            <!-- Draggable classes will be inserted here by JS -->
-                        </div>
-                    </div>
-                </div>
-            </aside>
-
-            <!-- 右側：時間割 -->
-            <main class="flex-1">
-                <div id="timetable-container" class="bg-white rounded-2xl shadow-lg overflow-auto" style="max-height: 75vh;">
-                    <div id="timetable" class="grid relative min-w-[1000px]">
-                        <!-- Timetable grid will be generated by JS -->
-                    </div>
-                </div>
-            </main>
+                </main>
+            </div>
         </div>
     </div>
 
@@ -213,6 +242,7 @@
 
 
     <script>
+        window.jsPDF = window.jspdf.jsPDF;
         document.addEventListener('DOMContentLoaded', () => {
             const courseInfo = {
                 'キンダー': { duration: 50, style: 'course-kinder' },
@@ -264,7 +294,11 @@
             const importFile = document.getElementById('importFile');
             const importBtn = document.getElementById('importBtn');
             const exportBtn = document.getElementById('exportBtn');
+            const pdfExportBtn = document.getElementById('pdfExportBtn');
             const schoolNameInput = document.getElementById('schoolNameInput');
+            const pdfLoader = document.getElementById('pdf-loader');
+            const mainContent = document.getElementById('main-content');
+
 
             // State
             let currentSemesterId = semesters[0].id;
