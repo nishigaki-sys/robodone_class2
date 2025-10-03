@@ -59,8 +59,9 @@
 
     <div class="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         <header class="text-center mb-6">
-            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">ロボ団 開講クラス設計</h1>
-            <p class="text-slate-600 mt-2">クラスを時間割へドラッグ＆ドロップし、学期を選択して教室の成長を計画できます。</p>
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900 flex items-center justify-center gap-2 flex-wrap">
+                ロボ団「<input type="text" id="schoolNameInput" placeholder="校舎名" class="bg-transparent text-center focus:outline-none focus:bg-slate-100 rounded-md p-1 w-48 border-b-2 border-slate-300 focus:border-blue-500">」開講クラス設計
+            </h1>
         </header>
 
         <!-- Dashboard -->
@@ -106,6 +107,7 @@
                                 <button id="importBtn" class="px-3 py-1 bg-green-100 text-green-700 rounded-md text-xs hover:bg-green-200">インポート</button>
                                 <input type="file" id="importFile" class="hidden" accept=".json">
                                 <button id="exportBtn" class="px-3 py-1 bg-blue-100 text-blue-700 rounded-md text-xs hover:bg-blue-200">エクスポート</button>
+                                <button id="resetBtn" class="px-3 py-1 bg-red-100 text-red-700 rounded-md text-xs hover:bg-red-200">リセット</button>
                             </div>
                         </div>
                         <div id="semesterSelector" class="grid grid-cols-2 gap-2">
@@ -155,6 +157,19 @@
                 <div class="grid grid-cols-3 items-center">
                     <label for="timeSelect" class="font-semibold text-slate-600">開始時間</label>
                     <select id="timeSelect" class="col-span-2 p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></select>
+                </div>
+                 <div class="grid grid-cols-3 items-center">
+                    <label class="font-semibold text-slate-600">教室</label>
+                    <div class="col-span-2 flex gap-4">
+                        <div>
+                            <input type="radio" id="classroom1Radio" name="classroom" value="classroom1" checked>
+                            <label for="classroom1Radio">第1教室</label>
+                        </div>
+                        <div>
+                            <input type="radio" id="classroom2Radio" name="classroom" value="classroom2">
+                            <label for="classroom2Radio">第2教室</label>
+                        </div>
+                    </div>
                 </div>
                 <div class="grid grid-cols-3 items-center">
                     <label for="capacityInput" class="font-semibold text-slate-600">クラス枠人数</label>
@@ -228,6 +243,7 @@
             const promotedBank = document.getElementById('promotedBank');
             const timetable = document.getElementById('timetable');
             const semesterSelector = document.getElementById('semesterSelector');
+            const resetBtn = document.getElementById('resetBtn');
             const detailModal = document.getElementById('detailModal');
             const modalTitle = document.getElementById('modalTitle');
             const daySelect = document.getElementById('daySelect');
@@ -248,6 +264,7 @@
             const importFile = document.getElementById('importFile');
             const importBtn = document.getElementById('importBtn');
             const exportBtn = document.getElementById('exportBtn');
+            const schoolNameInput = document.getElementById('schoolNameInput');
 
             // State
             let currentSemesterId = semesters[0].id;
@@ -258,6 +275,26 @@
             
             function getClassroomSchedules(classroomId) { return schedules[classroomId]; }
             function getClassroomPromotedClasses(classroomId) { return promotedClasses[classroomId]; }
+            
+            function saveData() {
+                const dataToSave = { 
+                    schedules, 
+                    promotedClasses,
+                    schoolName: schoolNameInput.value
+                };
+                localStorage.setItem('robodanScheduleData', JSON.stringify(dataToSave));
+            }
+
+            function loadData() {
+                const savedData = localStorage.getItem('robodanScheduleData');
+                if (savedData) {
+                    const parsed = JSON.parse(savedData);
+                    schedules = parsed.schedules || { classroom1: {}, classroom2: {} };
+                    promotedClasses = parsed.promotedClasses || { classroom1: {}, classroom2: {} };
+                    schoolNameInput.value = parsed.schoolName || '';
+                }
+            }
+
 
             function invalidateFuture(fromSemesterId) {
                 // Invalidate for both classrooms
@@ -402,7 +439,7 @@
                 });
             }
 
-            function saveCurrentSchedule() {
+            function saveCurrentSchedule(options = { invalidate: true }) {
                 if(currentClassroomId === 'all') return;
                 const classroomSchedules = getClassroomSchedules(currentClassroomId);
                 const classes = [];
@@ -425,6 +462,11 @@
                     });
                 });
                 classroomSchedules[currentSemesterId] = classes;
+                
+                if (options.invalidate) {
+                    invalidateFuture(currentSemesterId);
+                }
+                saveData();
             }
             
             function updateNumbering() {
@@ -686,8 +728,8 @@
                 classroomPromoted[semesterId] = [...nextSemesterSchedule];
             }
 
-            function switchSemester(semesterId, isImport = false) {
-                if (currentClassroomId !== 'all' && !isImport) saveCurrentSchedule();
+            function switchSemester(semesterId, isSetup = false) {
+                if (currentClassroomId !== 'all' && !isSetup) saveCurrentSchedule({invalidate: false});
                 currentSemesterId = semesterId;
                 
                 ['classroom1', 'classroom2'].forEach(crId => calculateScheduleFor(currentSemesterId, crId));
@@ -699,8 +741,8 @@
                 updatePromotedBank(currentSemesterId);
             }
 
-            function switchClassroom(newClassroomId) {
-                if (currentClassroomId !== 'all') saveCurrentSchedule();
+            function switchClassroom(newClassroomId, isSetup = false) {
+                if (currentClassroomId !== 'all' && !isSetup) saveCurrentSchedule({invalidate: false});
                 currentClassroomId = newClassroomId;
                 classroomSelector.querySelectorAll('.classroom-tab').forEach(tab => {
                     tab.classList.toggle('active', tab.dataset.id === newClassroomId);
@@ -721,10 +763,11 @@
             }
             
             function handleReset() {
-                 if(confirm('すべてのスケジュールをリセットします。よろしいですか？')) {
+                 if(confirm('現在のスケジュールをリセットします。よろしいですか？')) {
                     schedules = { classroom1: {}, classroom2: {} };
                     promotedClasses = { classroom1: {}, classroom2: {} };
-                    switchSemester(semesters[0].id);
+                    saveData();
+                    switchSemester(semesters[0].id, true);
                  }
             }
 
@@ -735,6 +778,7 @@
                 modalTitle.textContent = `${classData.course} - 詳細設定`;
                 daySelect.value = classData.day;
                 timeSelect.value = classData.time;
+                document.querySelector(`input[name="classroom"][value="${classData.classroomId}"]`).checked = true;
                 capacityInput.value = classData.capacity;
                 studentsInput.value = classData.students;
                 document.querySelector(`input[name="promotionTiming"][value="${classData.promotionTiming || '4月'}"]`).checked = true;
@@ -753,38 +797,60 @@
 
             function saveClassDetails() {
                 if (!editingClassId) return;
-                const classroomSchedules = getClassroomSchedules(currentClassroomId);
+
+                const originClassroomId = currentClassroomId;
+                const classroomSchedules = getClassroomSchedules(originClassroomId);
                 const classIndex = (classroomSchedules[currentSemesterId] || []).findIndex(c => c.id === editingClassId);
                 if (classIndex === -1) return;
                 
                 const classData = classroomSchedules[currentSemesterId][classIndex];
-
+                
+                const newClassroomId = document.querySelector('input[name="classroom"]:checked').value;
                 const newDay = daySelect.value;
                 const newTime = timeSelect.value;
-                const hasMoved = classData.day !== newDay || classData.time !== newTime;
-
-                if (hasMoved) {
-                    if (isSlotOccupied(newDay, newTime, courseInfo[classData.course].duration, currentClassroomId, editingClassId)) {
-                        alert('移動先の時間帯は同じ教室の他のクラスと重複しています。');
-                        return;
-                    }
-                    classData.day = newDay;
-                    classData.time = newTime;
-                }
-
+                
                 classData.capacity = parseInt(capacityInput.value) || 0;
                 classData.students = parseInt(studentsInput.value) || 0;
                 classData.promotionTiming = document.querySelector('input[name="promotionTiming"]:checked').value;
-                
+
+                if (originClassroomId !== newClassroomId) {
+                    if (isSlotOccupied(classData.day, classData.time, courseInfo[classData.course].duration, newClassroomId, null)) {
+                        alert(`移動先の教室（${newClassroomId === 'classroom1' ? '第1教室' : '第2教室'}）の同じ時間帯は既に埋まっています。\nクラスは持ち越しクラス一覧に移動します。`);
+                        const [movedClass] = classroomSchedules[currentSemesterId].splice(classIndex, 1);
+                        movedClass.classroomId = newClassroomId;
+                        const targetPromoted = getClassroomPromotedClasses(newClassroomId);
+                        targetPromoted[currentSemesterId] = targetPromoted[currentSemesterId] || [];
+                        targetPromoted[currentSemesterId].push(movedClass);
+                    } else {
+                        const [movedClass] = classroomSchedules[currentSemesterId].splice(classIndex, 1);
+                        movedClass.classroomId = newClassroomId;
+                        const targetSchedule = getClassroomSchedules(newClassroomId);
+                        targetSchedule[currentSemesterId] = targetSchedule[currentSemesterId] || [];
+                        targetSchedule[currentSemesterId].push(movedClass);
+                    }
+                } else { // Same classroom, maybe day/time changed
+                    const hasMoved = classData.day !== newDay || classData.time !== newTime;
+                    if (hasMoved) {
+                        if (isSlotOccupied(newDay, newTime, courseInfo[classData.course].duration, originClassroomId, editingClassId)) {
+                            alert('移動先の時間帯は同じ教室の他のクラスと重複しています。');
+                            return;
+                        }
+                        classData.day = newDay;
+                        classData.time = newTime;
+                    }
+                }
+
                 invalidateFuture(currentSemesterId);
                 
                 loadSchedule(currentSemesterId);
-                saveCurrentSchedule(); 
+                saveCurrentSchedule({invalidate: false}); // Already invalidated
                 updateDashboard();
                 closeDetailModal();
             }
             
             // Initial setup
+            loadData(); // Load data from local storage on start
+            
             semesters.forEach(semester => {
                 const btn = document.createElement('button');
                 btn.className = 'semester-btn w-full p-2 bg-slate-100 text-slate-700 rounded-md text-xs font-semibold hover:bg-slate-200';
@@ -810,7 +876,7 @@
             }
 
             generateTimetableGrid();
-            
+            resetBtn.addEventListener('click', handleReset);
             saveBtn.addEventListener('click', saveClassDetails);
             closeBtn.addEventListener('click', closeDetailModal);
             modalBackdrop.addEventListener('click', closeDetailModal);
@@ -818,8 +884,8 @@
             
             importBtn.addEventListener('click', () => importFile.click());
             exportBtn.addEventListener('click', () => {
-                if (currentClassroomId !== 'all') saveCurrentSchedule();
-                const dataStr = JSON.stringify({schedules, promotedClasses}, null, 2);
+                if (currentClassroomId !== 'all') saveCurrentSchedule({invalidate: false});
+                const dataStr = JSON.stringify({schedules, promotedClasses, schoolName: schoolNameInput.value}, null, 2);
                 const blob = new Blob([dataStr], {type: "application/json"});
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -841,6 +907,8 @@
                         if (data.schedules && data.promotedClasses) {
                             schedules = data.schedules;
                             promotedClasses = data.promotedClasses;
+                            schoolNameInput.value = data.schoolName || '';
+                            saveData();
                             switchSemester(currentSemesterId, true); // Pass true to prevent saving over imported data
                             alert('インポートが完了しました。');
                         } else { alert('無効なファイル形式です。'); }
@@ -850,8 +918,10 @@
                 e.target.value = '';
             });
 
-            switchClassroom('classroom1');
-            switchSemester(semesters[0].id);
+            schoolNameInput.addEventListener('input', saveData);
+
+            switchClassroom('classroom1', true);
+            switchSemester(semesters[0].id, true);
 
             let draggedItem = null;
             function handleDragStart(e) {
