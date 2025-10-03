@@ -968,14 +968,25 @@
                 doc.addImage(imgDataDashboard, 'PNG', 10, 10, dashboardWidth, dashboardHeight);
 
                 // Capture timetable
-                const canvasTimetable = await html2canvas(timetableContainerEl, { scale: 2 });
+                const originalStyle = timetableContainerEl.getAttribute('style');
+                timetableContainerEl.style.maxHeight = 'none';
+                timetableContainerEl.style.overflow = 'visible';
+                
+                const canvasTimetable = await html2canvas(timetableContainerEl, { 
+                    scale: 2,
+                    windowWidth: timetableContainerEl.scrollWidth,
+                    windowHeight: timetableContainerEl.scrollHeight
+                });
+                
+                timetableContainerEl.setAttribute('style', originalStyle); // Restore styles
+
                 const imgDataTimetable = canvasTimetable.toDataURL('image/png');
                 
                 const timetableWidth = pageWidth - 20;
                 const timetableHeight = (canvasTimetable.height * timetableWidth) / canvasTimetable.width;
 
                 let timetableY = 10 + dashboardHeight + 10;
-                if (timetableY + timetableHeight > pageHeight) {
+                if (timetableY + timetableHeight > pageHeight - 10) { // check with margin
                     doc.addPage();
                     timetableY = 10;
                 }
