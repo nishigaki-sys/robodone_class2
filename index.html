@@ -184,9 +184,12 @@
                     </div>
                 </div>
             </div>
-            <div class="mt-8 flex justify-end gap-3">
-                <button id="closeBtn" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 font-semibold">閉じる</button>
-                <button id="saveBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-semibold">保存する</button>
+            <div class="mt-8 flex justify-between items-center gap-3">
+                <button id="permanentDeleteBtn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-semibold" style="display: none;">このクラスを完全に削除する</button>
+                <div class="flex justify-end gap-3">
+                    <button id="closeBtn" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 font-semibold">閉じる</button>
+                    <button id="saveBtn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-semibold">保存する</button>
+                </div>
             </div>
         </div>
     </div>
@@ -239,6 +242,9 @@
             const availableSlots = document.getElementById('availableSlots');
             const saveBtn = document.getElementById('saveBtn');
             const closeBtn = document.getElementById('closeBtn');
+            // NEW FEATURE START: Get permanent delete button
+            const permanentDeleteBtn = document.getElementById('permanentDeleteBtn');
+            // NEW FEATURE END
             const modalBackdrop = document.getElementById('modalBackdrop');
             const dashboardContainer = document.getElementById('courseDashboard');
             const totalStudentsEl = document.getElementById('totalStudents');
@@ -282,7 +288,6 @@
             }
 
             function invalidateFuture(fromSemesterId) {
-                // Invalidate for both classrooms
                 ['classroom1', 'classroom2'].forEach(classroomId => {
                     const classroomSchedules = getClassroomSchedules(classroomId);
                     const classroomPromoted = getClassroomPromotedClasses(classroomId);
@@ -311,7 +316,7 @@
                     const endB = startB + courseInfo[classB.course].duration;
 
                     if (startA < endB && endA > startB) {
-                        return true; // Overlap detected
+                        return true;
                     }
                 }
                 return false;
@@ -368,7 +373,15 @@
                     classEl.addEventListener('dragstart', handleDragStart);
                     classEl.querySelector('.delete-btn').addEventListener('click', (e) => {
                         e.stopPropagation();
-                        invalidateFuture(currentSemesterId);
+
+                        const classData = (getClassroomSchedules(currentClassroomId)[currentSemesterId] || []).find(c => c.id === classEl.dataset.id);
+                        
+                        // If it's a promoted class, it should go back to the bank.
+                        // If it's a new class for this semester, it gets deleted.
+                        if (!classData.isPromoted) {
+                            invalidateFuture(currentSemesterId);
+                        }
+
                         classEl.remove();
                         saveCurrentSchedule();
                         updatePromotedBank(currentSemesterId);
@@ -431,7 +444,11 @@
                 timetable.querySelectorAll('.class-item:not(.class-item-inactive)').forEach(el => {
                     const slot = el.parentElement;
                     const id = el.dataset.id;
-                    const existingData = (classroomSchedules[currentSemesterId] || []).find(c => c.id === id) || (getClassroomPromotedClasses(currentClassroomId)[currentSemesterId] || []).find(c => c.id === id) || {};
+                    
+                    const existingDataInSchedule = (classroomSchedules[currentSemesterId] || []).find(c => c.id === id);
+                    const existingDataInPromoted = (getClassroomPromotedClasses(currentClassroomId)[currentSemesterId] || []).find(c => c.id === id);
+                    const existingData = existingDataInSchedule || existingDataInPromoted || {};
+
                     classes.push({
                         id: id,
                         course: el.dataset.course,
@@ -767,6 +784,15 @@
                 studentsInput.value = classData.students;
                 document.querySelector(`input[name="promotionTiming"][value="${classData.promotionTiming || '4月'}"]`).checked = true;
                 updateAvailableSlots();
+
+                // NEW FEATURE START: Show/hide permanent delete button
+                if (classData.isPromoted) {
+                    permanentDeleteBtn.style.display = 'block';
+                } else {
+                    permanentDeleteBtn.style.display = 'none';
+                }
+                // NEW FEATURE END
+
                 detailModal.classList.remove('hidden');
             }
 
@@ -779,8 +805,6 @@
                 studentsInput.max = capacity;
             }
 
-            // ---------- BUG FIX START ----------
-            // The following function has been rewritten to fix the bug.
             function saveClassDetails() {
                 if (!editingClassId) return;
 
@@ -791,7 +815,6 @@
 
                 const classData = classroomSchedules[currentSemesterId][classIndex];
 
-                // Get all new values from the modal
                 const newClassroomId = document.querySelector('input[name="classroom"]:checked').value;
                 const newDay = daySelect.value;
                 const newTime = timeSelect.value;
@@ -799,18 +822,15 @@
                 const newStudents = parseInt(studentsInput.value) || 0;
                 const newPromotionTiming = document.querySelector('input[name="promotionTiming"]:checked').value;
 
-                // Check for changes that require validation
                 const hasMoved = classData.day !== newDay || classData.time !== newTime;
                 const hasSwitchedClassroom = originClassroomId !== newClassroomId;
 
                 if (hasSwitchedClassroom) {
-                    // Check the NEW slot in the NEW classroom for conflicts
                     if (isSlotOccupied(newDay, newTime, courseInfo[classData.course].duration, newClassroomId, null)) {
                         alert(`移動先の教室（${newClassroomId === 'classroom1' ? '第1教室' : '第2教室'}）の指定された時間帯は既に埋まっています。`);
-                        return; // Block the save action
+                        return;
                     }
 
-                    // Apply all changes and move the class
                     const [movedClass] = classroomSchedules[currentSemesterId].splice(classIndex, 1);
                     movedClass.classroomId = newClassroomId;
                     movedClass.day = newDay;
@@ -823,37 +843,32 @@
                     targetSchedule[currentSemesterId] = targetSchedule[currentSemesterId] || [];
                     targetSchedule[currentSemesterId].push(movedClass);
 
-                } else if (hasMoved) { // Same classroom, but time/day has changed
+                } else if (hasMoved) {
                     if (isSlotOccupied(newDay, newTime, courseInfo[classData.course].duration, originClassroomId, editingClassId)) {
                         alert('移動先の時間帯は同じ教室の他のクラスと重複しています。');
                         return;
                     }
-                    // Apply all changes to the class in its current location
                     classData.day = newDay;
                     classData.time = newTime;
                     classData.capacity = newCapacity;
                     classData.students = newStudents;
                     classData.promotionTiming = newPromotionTiming;
                 } else {
-                    // No change in position, just update other details
                     classData.capacity = newCapacity;
                     classData.students = newStudents;
                     classData.promotionTiming = newPromotionTiming;
                 }
 
-                // A change that affects promotion logic requires invalidating future semesters
                 invalidateFuture(currentSemesterId);
 
-                // Save the modified state and refresh the UI
-                loadSchedule(currentSemesterId); // Reloads the visual timetable from the new state
-                saveCurrentSchedule({invalidate: false}); // Saves to localStorage without re-invalidating
+                loadSchedule(currentSemesterId);
+                saveCurrentSchedule({invalidate: false});
                 updateDashboard();
                 closeDetailModal();
             }
-            // ---------- BUG FIX END ----------
             
             // Initial setup
-            loadData(); // Load data from local storage on start
+            loadData(); 
             
             semesters.forEach(semester => {
                 const btn = document.createElement('button');
@@ -870,7 +885,6 @@
             for (const name in courseInfo) {
                 classBank.appendChild(createBankElement({ course: name, isPromoted: false }));
             }
-            // Populate modal dropdowns
             days.forEach(day => daySelect.add(new Option(`${day}曜日`, day)));
             for (let h = timeRange.start; h < timeRange.end; h++) {
                 for (let m = 0; m < 60; m += timeRange.interval) {
@@ -886,6 +900,39 @@
             modalBackdrop.addEventListener('click', closeDetailModal);
             [capacityInput, studentsInput].forEach(el => el.addEventListener('input', updateAvailableSlots));
             
+            // NEW FEATURE START: Add event listener for permanent delete
+            permanentDeleteBtn.addEventListener('click', () => {
+                if (!editingClassId) return;
+                if (!confirm('このクラスをこの学期以降、すべての学期から完全に削除します。この操作は元に戻せません。よろしいですか？')) {
+                    return;
+                }
+
+                const classToDeleteId = editingClassId;
+                const classEl = timetable.querySelector(`.class-item[data-id="${classToDeleteId}"]`);
+                if (!classEl) return;
+                const originClassroomId = classEl.dataset.classroomId;
+
+                const currentSemesterIndex = semesters.findIndex(s => s.id === currentSemesterId);
+
+                for (let i = currentSemesterIndex; i < semesters.length; i++) {
+                    const semesterId = semesters[i].id;
+                    
+                    if (schedules[originClassroomId] && schedules[originClassroomId][semesterId]) {
+                        schedules[originClassroomId][semesterId] = schedules[originClassroomId][semesterId].filter(c => c.id !== classToDeleteId);
+                    }
+
+                    if (promotedClasses[originClassroomId] && promotedClasses[originClassroomId][semesterId]) {
+                        promotedClasses[originClassroomId][semesterId] = promotedClasses[originClassroomId][semesterId].filter(c => c.id !== classToDeleteId);
+                    }
+                }
+                
+                saveData();
+                closeDetailModal();
+                loadSchedule(currentSemesterId);
+                updatePromotedBank(currentSemesterId);
+            });
+            // NEW FEATURE END
+
             importBtn.addEventListener('click', () => importFile.click());
             exportBtn.addEventListener('click', () => {
                 if (currentClassroomId !== 'all') saveCurrentSchedule({invalidate: false});
@@ -913,7 +960,7 @@
                             promotedClasses = data.promotedClasses;
                             schoolNameInput.value = data.schoolName || '';
                             saveData();
-                            switchSemester(currentSemesterId, true); // Pass true to prevent saving over imported data
+                            switchSemester(currentSemesterId, true);
                             alert('インポートが完了しました。');
                         } else { alert('無効なファイル形式です。'); }
                     } catch (err) { alert('ファイルの読み込みに失敗しました。'); }
@@ -949,13 +996,11 @@
                 if (!draggedItem || currentClassroomId === 'all') return;
 
                 const dropZone = e.currentTarget;
-                const targetDay = dropZone.dataset.day;
-                const targetTime = dropZone.dataset.time;
                 const courseName = draggedItem.dataset.course;
                 const duration = courseInfo[courseName].duration;
                 const draggedId = draggedItem.classList.contains('class-item') ? draggedItem.dataset.id : null;
                 
-                if (isSlotOccupied(targetDay, targetTime, duration, currentClassroomId, draggedId)) {
+                if (isSlotOccupied(dropZone.dataset.day, dropZone.dataset.time, duration, currentClassroomId, draggedId)) {
                     return;
                 }
                 
@@ -977,13 +1022,14 @@
                     isNewClass = true;
                     const isPromoted = draggedItem.dataset.promoted === 'true';
                     
-                    if (isPromoted && draggedItem.dataset.id) { // Check for ID from promoted bank
+                    if (isPromoted && draggedItem.dataset.id) {
                         const bank = classroomPromoted[currentSemesterId] || [];
-                        const classIndex = bank.findIndex(c => c.id === draggedItem.dataset.id);
-                        if(classIndex > -1) {
-                            const [originalClassData] = bank.splice(classIndex, 1);
+                        // BUG FIX START: Find the class in the master list, but DO NOT remove it.
+                        const originalClassData = bank.find(c => c.id === draggedItem.dataset.id);
+                        if(originalClassData) {
                              classData = { ...originalClassData, day: dropZone.dataset.day, time: dropZone.dataset.time };
                         }
+                        // BUG FIX END
                     } else {
                         classData = {
                             id: crypto.randomUUID(),
@@ -1009,7 +1055,7 @@
                 const classEl = createClassElement(classData);
                 dropZone.appendChild(classEl);
                 
-                if(isNewClass) {
+                if(isNewClass && !classData.isPromoted) {
                     invalidateFuture(currentSemesterId);
                 }
 
