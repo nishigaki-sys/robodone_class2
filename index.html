@@ -78,6 +78,11 @@
         .school-tab-delete:hover {
             opacity: 1;
         }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
 
     </style>
 </head>
@@ -128,21 +133,30 @@
 
         <div id="mainContent" class="flex flex-col lg:flex-row gap-8">
             <!-- 左側：操作パネル -->
-            <aside id="sidePanel" class="lg:w-1/4 xl:w-1/5">
+            <aside id="sidePanel" class="lg:w-1/4 xl:w-1-5">
                 <div class="bg-white p-6 rounded-2xl shadow-lg space-y-4">
                     <!-- 学期切り替え -->
                     <div>
-                        <div class="flex items-center justify-between mb-2">
-                            <h2 class="text-xl font-bold">学期</h2>
-                            <div class="flex gap-1">
-                                <button id="importBtn" class="px-3 py-1 bg-green-100 text-green-700 rounded-md text-xs hover:bg-green-200">インポート</button>
-                                <input type="file" id="importFile" class="hidden" accept=".json">
-                                <button id="exportBtn" class="px-3 py-1 bg-blue-100 text-blue-700 rounded-md text-xs hover:bg-blue-200">エクスポート</button>
-                                <button id="resetBtn" class="px-3 py-1 bg-red-100 text-red-700 rounded-md text-xs hover:bg-red-200">リセット</button>
-                            </div>
-                        </div>
+                        <h2 class="text-xl font-bold mb-2">学期</h2>
                         <div id="semesterSelector" class="grid grid-cols-2 gap-2">
                             <!-- Semester buttons will be generated here -->
+                        </div>
+                    </div>
+
+                    <!-- データ管理 -->
+                    <div>
+                        <h2 class="text-xl font-bold mt-4 mb-2">データ管理</h2>
+                        <div class="space-y-2 text-xs">
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="importSchoolBtn" class="w-full px-3 py-2 bg-green-100 text-green-700 rounded-md hover:bg-green-200 disabled:hover:bg-green-100">この校舎にインポート</button>
+                                <button id="exportSchoolBtn" class="w-full px-3 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 disabled:hover:bg-blue-100">この校舎をエクスポート</button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="importAllBtn" class="w-full px-3 py-2 bg-green-100 text-green-700 rounded-md hover:bg-green-200">全校舎インポート</button>
+                                <button id="exportAllBtn" class="w-full px-3 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200">全校舎エクスポート</button>
+                            </div>
+                            <button id="resetBtn" class="w-full mt-2 px-3 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 disabled:hover:bg-red-100">この校舎をリセット</button>
+                            <input type="file" id="importFile" class="hidden" accept=".json">
                         </div>
                     </div>
 
@@ -306,14 +320,17 @@
             const classroomSelector = document.getElementById('classroomSelector');
             const sidePanel = document.getElementById('sidePanel');
             const importFile = document.getElementById('importFile');
-            const importBtn = document.getElementById('importBtn');
-            const exportBtn = document.getElementById('exportBtn');
+            const importSchoolBtn = document.getElementById('importSchoolBtn');
+            const exportSchoolBtn = document.getElementById('exportSchoolBtn');
+            const importAllBtn = document.getElementById('importAllBtn');
+            const exportAllBtn = document.getElementById('exportAllBtn');
             
             // --- STATE MANAGEMENT ---
             let appData = {};
             let currentSemesterId = semesters[0].id;
             let currentClassroomId = 'classroom1';
             let editingClassId = null;
+            let importMode = 'all'; // 'school' or 'all'
 
             function getCurrentSchool() {
                 if (!appData.currentSchoolId || !appData.schools) return null;
@@ -455,6 +472,8 @@
                 allSchoolsMessage.style.display = isAllSchoolsView ? 'block' : 'none';
                 classroomSelector.style.display = isAllSchoolsView ? 'none' : 'flex';
                 resetBtn.disabled = isAllSchoolsView;
+                importSchoolBtn.disabled = isAllSchoolsView;
+                exportSchoolBtn.disabled = isAllSchoolsView;
 
 
                 saveData();
@@ -989,6 +1008,7 @@
                 }
                 generateTimetableGrid();
                 
+                // Event Listeners
                 resetBtn.addEventListener('click', handleReset);
                 saveBtn.addEventListener('click', saveClassDetails);
                 closeBtn.addEventListener('click', closeDetailModal);
@@ -1014,37 +1034,100 @@
                     updatePromotedBank(currentSemesterId);
                 });
                 
-                importBtn.addEventListener('click', () => importFile.click());
-                exportBtn.addEventListener('click', () => {
+                exportSchoolBtn.addEventListener('click', () => {
+                    const school = getCurrentSchool();
+                    if (!school || school.id === ALL_SCHOOLS_ID) return;
                     saveCurrentSchedule({invalidate: false});
-                    const dataStr = JSON.stringify(appData, null, 2);
-                    const blob = new Blob([dataStr], {type: "application/json"});
+                    const schoolDataStr = JSON.stringify(school, null, 2);
+                    const blob = new Blob([schoolDataStr], {type: "application/json"});
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `robodan-schedule-${school.name}.json`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                });
+
+                importSchoolBtn.addEventListener('click', () => {
+                    importMode = 'school';
+                    importFile.click();
+                });
+
+                exportAllBtn.addEventListener('click', () => {
+                    saveCurrentSchedule({invalidate: false});
+                    const allDataStr = JSON.stringify(appData, null, 2);
+                    const blob = new Blob([allDataStr], {type: "application/json"});
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(blob);
                     a.download = 'robodan-all-schools.json';
                     a.click();
                     URL.revokeObjectURL(a.href);
                 });
+
+                importAllBtn.addEventListener('click', () => {
+                    importMode = 'all';
+                    importFile.click();
+                });
+
                 importFile.addEventListener('change', (e) => {
                     const file = e.target.files[0];
                     if (!file) return;
-                    if (!confirm('現在のすべての校舎データを上書きしてインポートします。よろしいですか？')) { e.target.value = ''; return; }
+
                     const reader = new FileReader();
                     reader.onload = (ev) => {
                         try {
                             const data = JSON.parse(ev.target.result);
-                            if (data.schools && data.currentSchoolId) {
-                                appData = data;
-                                saveData();
-                                renderSchoolTabs();
-                                switchSchoolTab(appData.currentSchoolId);
-                                alert('インポートが完了しました。');
-                            } else { alert('無効なファイル形式です。'); }
-                        } catch (err) { alert('ファイルの読み込みに失敗しました。'); }
+                            if (importMode === 'all') {
+                                handleAllSchoolsImport(data);
+                            } else { // importMode === 'school'
+                                handleSingleSchoolImport(data);
+                            }
+                        } catch (err) {
+                            alert('ファイルの読み込みまたは解析に失敗しました。');
+                            console.error(err);
+                        }
                     };
                     reader.readAsText(file);
-                    e.target.value = '';
+                    e.target.value = ''; // Reset file input
                 });
+
+                function handleAllSchoolsImport(data) {
+                    if (!confirm('現在のすべての校舎データを上書きしてインポートします。よろしいですか？')) return;
+                    if (data.schools && data.currentSchoolId) {
+                        appData = data;
+                        if (!appData.schools.find(s => s.id === ALL_SCHOOLS_ID)) {
+                           appData.schools.unshift({ id: ALL_SCHOOLS_ID, name: 'すべての校舎' });
+                        }
+                        saveData();
+                        renderSchoolTabs();
+                        switchSchoolTab(appData.currentSchoolId);
+                        alert('全校舎のインポートが完了しました。');
+                    } else {
+                        alert('無効な全校舎データファイルです。');
+                    }
+                }
+
+                function handleSingleSchoolImport(data) {
+                    const school = getCurrentSchool();
+                    if (!school || school.id === ALL_SCHOOLS_ID) {
+                        alert('個別の校舎を選択してください。');
+                        return;
+                    }
+                    if (!confirm(`「${school.name}」のデータを上書きしてインポートします。よろしいですか？`)) return;
+
+                    if (data.schedules && data.promotedClasses && data.name) {
+                        school.name = data.name;
+                        school.schedules = data.schedules;
+                        school.promotedClasses = data.promotedClasses;
+                        saveData();
+                        renderSchoolTabs();
+                        schoolNameDisplay.textContent = school.name;
+                        switchSemester(currentSemesterId, true); // Refresh view
+                        alert(`「${school.name}」へのインポートが完了しました。`);
+                    } else {
+                        alert('無効な校舎データファイルです。');
+                    }
+                }
+
 
                 switchSchoolTab(appData.currentSchoolId);
             }
