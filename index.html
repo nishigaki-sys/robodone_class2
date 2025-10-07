@@ -152,6 +152,7 @@
                     <div>
                         <h2 class="text-xl font-bold mt-4 mb-2">データ管理</h2>
                         <div class="space-y-2 text-xs">
+                             <button id="setStartSemesterBtn" class="w-full px-3 py-2 bg-yellow-100 text-yellow-800 rounded-md hover:bg-yellow-200">開始学期を設定</button>
                             <div class="grid grid-cols-2 gap-2">
                                 <button id="importSchoolBtn" class="w-full px-3 py-2 bg-green-100 text-green-700 rounded-md hover:bg-green-200 disabled:hover:bg-green-100">この校舎にインポート</button>
                                 <button id="exportSchoolBtn" class="w-full px-3 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 disabled:hover:bg-blue-100">この校舎をエクスポート</button>
@@ -291,10 +292,8 @@
 
             const days = ['月', '火', '水', '木', '金', '土', '日'];
             const timeRange = { start: 8, end: 21, interval: 10 };
-            const semesters = Array.from({length: 5}, (_, i) => i + 1).flatMap(i => [
-                { id: `${i}-spring`, name: `${i}年目 春`},
-                { id: `${i}-autumn`, name: `${i}年目 秋`}
-            ]);
+            
+            let semesters = [];
             
             // --- DOM Elements ---
             const schoolTabsContainer = document.getElementById('schoolTabsContainer');
@@ -305,6 +304,7 @@
             const promotedBank = document.getElementById('promotedBank');
             const timetable = document.getElementById('timetable');
             const semesterSelector = document.getElementById('semesterSelector');
+            const setStartSemesterBtn = document.getElementById('setStartSemesterBtn');
             const resetBtn = document.getElementById('resetBtn');
             const detailModal = document.getElementById('detailModal');
             const modalTitle = document.getElementById('modalTitle');
@@ -332,7 +332,7 @@
             
             // --- STATE MANAGEMENT ---
             let appData = {};
-            let currentSemesterId = semesters[0].id;
+            let currentSemesterId = '';
             let currentClassroomId = 'classroom1';
             let editingClassId = null;
             let importMode = 'all'; // 'school' or 'all'
@@ -366,6 +366,7 @@
                 if (!appData.schools || appData.schools.length === 0) {
                     const firstSchoolId = crypto.randomUUID();
                     appData = {
+                        startSemester: { year: 2025, season: 'autumn' },
                         schools: [
                             { id: ALL_SCHOOLS_ID, name: 'すべての校舎' },
                             {
@@ -379,6 +380,9 @@
                     };
                     saveData();
                 }
+                 if (!appData.startSemester) {
+                    appData.startSemester = { year: 2025, season: 'autumn' };
+                 }
                  if (!appData.schools.find(s => s.id === ALL_SCHOOLS_ID)) {
                     appData.schools.unshift({ id: ALL_SCHOOLS_ID, name: 'すべての校舎' });
                  }
@@ -387,7 +391,28 @@
                 }
             }
 
-            // --- SCHOOL MANAGEMENT FUNCTIONS ---
+            // --- SCHOOL & SEMESTER MANAGEMENT ---
+            function generateSemesters(startYear, startSeason) {
+                semesters.length = 0; // Clear the existing array
+                let currentYear = startYear;
+                let isSpring = startSeason === 'spring';
+
+                // Handle starting season logic
+                if (startSeason === 'autumn') {
+                    semesters.push({ id: `${currentYear}-autumn`, name: `${currentYear}年 秋` });
+                    currentYear++;
+                    isSpring = true;
+                }
+                
+                while (semesters.length < 10) {
+                    semesters.push({ id: `${currentYear}-spring`, name: `${currentYear}年 春` });
+                    if (semesters.length < 10) {
+                        semesters.push({ id: `${currentYear}-autumn`, name: `${currentYear}年 秋` });
+                    }
+                    currentYear++;
+                }
+            }
+            
             function renderSchoolTabs() {
                 schoolTabsContainer.innerHTML = '';
                 appData.schools.forEach(school => {
@@ -997,17 +1022,26 @@
             // --- INITIALIZATION ---
             function initializeApp() {
                 loadData();
+                
+                function setupSemestersAndUI() {
+                    generateSemesters(appData.startSemester.year, appData.startSemester.season);
+                    currentSemesterId = semesters[0].id;
+                    semesterSelector.innerHTML = '';
+                    semesters.forEach(semester => {
+                        const btn = document.createElement('button');
+                        btn.className = 'semester-btn w-full p-2 bg-slate-100 text-slate-700 rounded-md text-xs font-semibold hover:bg-slate-200';
+                        btn.textContent = semester.name;
+                        btn.dataset.id = semester.id;
+                        btn.addEventListener('click', () => switchSemester(semester.id));
+                        semesterSelector.appendChild(btn);
+                    });
+                     switchSemester(currentSemesterId, true);
+                }
+
+                setupSemestersAndUI();
                 renderSchoolTabs();
                 schoolNameDisplay.textContent = getCurrentSchool()?.name || '';
                 
-                semesters.forEach(semester => {
-                    const btn = document.createElement('button');
-                    btn.className = 'semester-btn w-full p-2 bg-slate-100 text-slate-700 rounded-md text-xs font-semibold hover:bg-slate-200';
-                    btn.textContent = semester.name;
-                    btn.dataset.id = semester.id;
-                    btn.addEventListener('click', () => switchSemester(semester.id));
-                    semesterSelector.appendChild(btn);
-                });
                 classroomSelector.querySelectorAll('.classroom-tab').forEach(tab => tab.addEventListener('click', () => switchClassroom(tab.dataset.id)));
                 Object.keys(courseInfo).forEach(name => classBank.appendChild(createBankElement({ course: name, isPromoted: false })));
                 days.forEach(day => daySelect.add(new Option(`${day}曜日`, day)));
@@ -1020,6 +1054,26 @@
                 generateTimetableGrid();
                 
                 // Event Listeners
+                setStartSemesterBtn.addEventListener('click', () => {
+                    const year = prompt('開始年を入力してください (例: 2026)', appData.startSemester.year);
+                    const yearNum = parseInt(year);
+                    if (!year || isNaN(yearNum)) {
+                        alert('無効な年です。');
+                        return;
+                    }
+
+                    const seasonStr = prompt('開始学期を入力してください (春または秋)', appData.startSemester.season === 'spring' ? '春' : '秋');
+                    if (!seasonStr || !['春', '秋'].includes(seasonStr)) {
+                        alert('無効な学期です。「春」または「秋」を入力してください。');
+                        return;
+                    }
+                    const season = seasonStr === '春' ? 'spring' : 'autumn';
+                    
+                    appData.startSemester = { year: yearNum, season: season };
+                    saveData();
+                    setupSemestersAndUI();
+                });
+                
                 resetBtn.addEventListener('click', handleReset);
                 saveBtn.addEventListener('click', saveClassDetails);
                 closeBtn.addEventListener('click', closeDetailModal);
@@ -1103,12 +1157,13 @@
 
                 function handleAllSchoolsImport(data) {
                     if (!confirm('現在のすべての校舎データを上書きしてインポートします。よろしいですか？')) return;
-                    if (data.schools && data.currentSchoolId) {
+                    if (data.schools && data.currentSchoolId && data.startSemester) {
                         appData = data;
                         if (!appData.schools.find(s => s.id === ALL_SCHOOLS_ID)) {
                            appData.schools.unshift({ id: ALL_SCHOOLS_ID, name: 'すべての校舎' });
                         }
                         saveData();
+                        setupSemestersAndUI();
                         renderSchoolTabs();
                         switchSchoolTab(appData.currentSchoolId);
                         alert('全校舎のインポートが完了しました。');
