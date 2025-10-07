@@ -109,6 +109,13 @@
 
         <div class="mt-8 bg-white p-6 rounded-2xl shadow-lg">
             <h2 class="text-2xl font-bold text-slate-900 mb-4">クラスサマリー</h2>
+
+            <div class="mb-6 pb-6 border-b border-slate-200">
+                <h3 class="text-lg font-bold mb-3 text-slate-800">学期を選択</h3>
+                <div id="semesterSelector" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+                    </div>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
                 <div class="bg-blue-50 p-4 rounded-lg">
                     <div class="text-sm font-semibold text-blue-800">総生徒数</div>
@@ -138,12 +145,6 @@
         <div id="mainContent" class="flex flex-col lg:flex-row gap-8 mt-8">
             <aside id="sidePanel" class="lg:w-1/4 xl:w-1-5">
                 <div class="bg-white p-6 rounded-2xl shadow-lg space-y-4">
-                    <div>
-                        <h2 class="text-xl font-bold mb-2">学期</h2>
-                        <div id="semesterSelector" class="grid grid-cols-2 gap-2">
-                            </div>
-                    </div>
-
                     <div id="promotedSection">
                         <h3 class="text-lg font-bold mb-3 text-blue-700 border-b pb-2">持ち越しクラス</h3>
                         <div id="promotedBank" class="space-y-3 min-h-[50px]">
@@ -466,8 +467,13 @@
                 }
                 
                 const isAllSchoolsView = schoolId === ALL_SCHOOLS_ID;
-                mainContent.style.display = isAllSchoolsView ? 'none' : 'flex';
+                const timetableMain = document.querySelector('#mainContent main');
+
+                // Hide/show relevant parts instead of the whole mainContent
+                sidePanel.style.display = isAllSchoolsView ? 'none' : 'block';
+                timetableMain.style.display = isAllSchoolsView ? 'none' : 'block';
                 allSchoolsMessage.style.display = isAllSchoolsView ? 'block' : 'none';
+
                 classroomSelector.style.display = isAllSchoolsView ? 'none' : 'flex';
                 resetBtn.disabled = isAllSchoolsView;
                 importSchoolBtn.disabled = isAllSchoolsView;
