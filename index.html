@@ -366,12 +366,12 @@
                 if (!appData.schools || appData.schools.length === 0) {
                     const firstSchoolId = crypto.randomUUID();
                     appData = {
-                        startSemester: { year: 2025, season: 'autumn' },
                         schools: [
                             { id: ALL_SCHOOLS_ID, name: 'すべての校舎' },
                             {
                                 id: firstSchoolId,
                                 name: '最初の校舎',
+                                startSemester: { year: 2025, season: 'autumn' },
                                 schedules: { classroom1: {}, classroom2: {} },
                                 promotedClasses: { classroom1: {}, classroom2: {} }
                             }
@@ -380,9 +380,24 @@
                     };
                     saveData();
                 }
-                 if (!appData.startSemester) {
-                    appData.startSemester = { year: 2025, season: 'autumn' };
-                 }
+
+                 // Migration for older data structure
+                if (appData.startSemester) {
+                    appData.schools.forEach(school => {
+                        if (school.id !== ALL_SCHOOLS_ID && !school.startSemester) {
+                            school.startSemester = { ...appData.startSemester };
+                        }
+                    });
+                    delete appData.startSemester; // Delete the global one
+                    saveData();
+                }
+                appData.schools.forEach(school => {
+                    if (school.id !== ALL_SCHOOLS_ID && !school.startSemester) {
+                         school.startSemester = { year: 2025, season: 'autumn' };
+                    }
+                });
+
+
                  if (!appData.schools.find(s => s.id === ALL_SCHOOLS_ID)) {
                     appData.schools.unshift({ id: ALL_SCHOOLS_ID, name: 'すべての校舎' });
                  }
@@ -395,13 +410,10 @@
             function generateSemesters(startYear, startSeason) {
                 semesters.length = 0; // Clear the existing array
                 let currentYear = startYear;
-                let isSpring = startSeason === 'spring';
-
-                // Handle starting season logic
+                
                 if (startSeason === 'autumn') {
                     semesters.push({ id: `${currentYear}-autumn`, name: `${currentYear}年 秋` });
                     currentYear++;
-                    isSpring = true;
                 }
                 
                 while (semesters.length < 10) {
@@ -454,6 +466,7 @@
                     appData.schools.push({
                         id: newSchoolId,
                         name: name,
+                        startSemester: { year: 2025, season: 'autumn' },
                         schedules: { classroom1: {}, classroom2: {} },
                         promotedClasses: { classroom1: {}, classroom2: {} }
                     });
@@ -510,11 +523,21 @@
                 resetBtn.disabled = isAllSchoolsView;
                 importSchoolBtn.disabled = isAllSchoolsView;
                 exportSchoolBtn.disabled = isAllSchoolsView;
+                setStartSemesterBtn.disabled = isAllSchoolsView;
 
 
                 saveData();
                 renderSchoolTabs();
-                switchSemester(currentSemesterId, true);
+                
+                if (school.id !== ALL_SCHOOLS_ID) {
+                    setupSemestersAndUI();
+                } else {
+                    // For "All Schools", we can use the first school's semester settings for display consistency
+                    const firstSchool = appData.schools.find(s => s.id !== ALL_SCHOOLS_ID);
+                    generateSemesters(firstSchool.startSemester.year, firstSchool.startSemester.season);
+                    currentSemesterId = semesters[0].id;
+                    updateDashboard();
+                }
             }
 
             // --- CORE LOGIC FUNCTIONS ---
@@ -1024,8 +1047,22 @@
                 loadData();
                 
                 function setupSemestersAndUI() {
-                    generateSemesters(appData.startSemester.year, appData.startSemester.season);
-                    currentSemesterId = semesters[0].id;
+                    const school = getCurrentSchool();
+                    let startSem;
+
+                    if (school && school.id !== ALL_SCHOOLS_ID) {
+                        startSem = school.startSemester;
+                    } else {
+                        const firstSchool = appData.schools.find(s => s.id !== ALL_SCHOOLS_ID);
+                        startSem = firstSchool ? firstSchool.startSemester : { year: 2025, season: 'autumn' };
+                    }
+                    
+                    generateSemesters(startSem.year, startSem.season);
+
+                    if (!semesters.find(s => s.id === currentSemesterId)) {
+                        currentSemesterId = semesters[0].id;
+                    }
+                    
                     semesterSelector.innerHTML = '';
                     semesters.forEach(semester => {
                         const btn = document.createElement('button');
@@ -1035,7 +1072,7 @@
                         btn.addEventListener('click', () => switchSemester(semester.id));
                         semesterSelector.appendChild(btn);
                     });
-                     switchSemester(currentSemesterId, true);
+                    switchSemester(currentSemesterId, true);
                 }
 
                 setupSemestersAndUI();
@@ -1055,23 +1092,28 @@
                 
                 // Event Listeners
                 setStartSemesterBtn.addEventListener('click', () => {
-                    const year = prompt('開始年を入力してください (例: 2026)', appData.startSemester.year);
+                    const school = getCurrentSchool();
+                    if (!school || school.id === ALL_SCHOOLS_ID) return;
+
+                    const year = prompt('開始年を入力してください (例: 2026)', school.startSemester.year);
                     const yearNum = parseInt(year);
                     if (!year || isNaN(yearNum)) {
                         alert('無効な年です。');
                         return;
                     }
 
-                    const seasonStr = prompt('開始学期を入力してください (春または秋)', appData.startSemester.season === 'spring' ? '春' : '秋');
+                    const seasonStr = prompt('開始学期を入力してください (春または秋)', school.startSemester.season === 'spring' ? '春' : '秋');
                     if (!seasonStr || !['春', '秋'].includes(seasonStr)) {
                         alert('無効な学期です。「春」または「秋」を入力してください。');
                         return;
                     }
                     const season = seasonStr === '春' ? 'spring' : 'autumn';
                     
-                    appData.startSemester = { year: yearNum, season: season };
-                    saveData();
-                    setupSemestersAndUI();
+                    if (confirm(`開始学期を${yearNum}年 ${seasonStr}に変更します。この操作により、現在の学期より前のスケジュールデータはアクセスできなくなります（データは保持されます）。よろしいですか？`)) {
+                        school.startSemester = { year: yearNum, season: season };
+                        saveData();
+                        setupSemestersAndUI();
+                    }
                 });
                 
                 resetBtn.addEventListener('click', handleReset);
@@ -1157,7 +1199,7 @@
 
                 function handleAllSchoolsImport(data) {
                     if (!confirm('現在のすべての校舎データを上書きしてインポートします。よろしいですか？')) return;
-                    if (data.schools && data.currentSchoolId && data.startSemester) {
+                    if (data.schools && data.currentSchoolId) {
                         appData = data;
                         if (!appData.schools.find(s => s.id === ALL_SCHOOLS_ID)) {
                            appData.schools.unshift({ id: ALL_SCHOOLS_ID, name: 'すべての校舎' });
@@ -1180,17 +1222,18 @@
                     }
                     if (!confirm(`「${school.name}」のデータを上書きしてインポートします。よろしいですか？`)) return;
 
-                    if (data.schedules && data.promotedClasses && data.name) {
+                    if (data.schedules && data.promotedClasses && data.name && data.startSemester) {
                         school.name = data.name;
                         school.schedules = data.schedules;
                         school.promotedClasses = data.promotedClasses;
+                        school.startSemester = data.startSemester;
                         saveData();
                         renderSchoolTabs();
                         schoolNameDisplay.textContent = school.name;
-                        switchSemester(currentSemesterId, true); // Refresh view
+                        setupSemestersAndUI();
                         alert(`「${school.name}」へのインポートが完了しました。`);
                     } else {
-                        alert('無効な校舎データファイルです。');
+                        alert('無効な校舎データファイルです。開始学期情報が含まれていない可能性があります。');
                     }
                 }
 
