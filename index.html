@@ -54,7 +54,7 @@
         .timing-april { background-color: #ec4899; } /* Pink */
         .timing-october { background-color: #818cf8; } /* Indigo */
         
-        /* New Styles for School Tabs */
+        /* Styles for School Tabs */
         .school-tab {
             transition: all 0.2s;
             border-bottom: 3px solid transparent;
@@ -79,6 +79,11 @@
             opacity: 1;
         }
         
+        .tab-drag-over {
+            border-left: 3px solid #3b82f6;
+            background-color: #eff6ff;
+        }
+
         button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
@@ -331,6 +336,7 @@
             let currentClassroomId = 'classroom1';
             let editingClassId = null;
             let importMode = 'all'; // 'school' or 'all'
+            let draggedTabId = null;
 
             function getCurrentSchool() {
                 if (!appData.currentSchoolId || !appData.schools) return null;
@@ -393,6 +399,7 @@
                     if (school.id === ALL_SCHOOLS_ID) {
                         tab.innerHTML = `📊 ${school.name}`;
                     } else {
+                        tab.draggable = true;
                         tab.innerHTML = `${school.name} <span class="school-tab-delete" title="この校舎を削除">×</span>`;
                         tab.addEventListener('dblclick', () => renameSchool(school.id));
                         tab.querySelector('.school-tab-delete').addEventListener('click', (e) => {
@@ -401,6 +408,10 @@
                         });
                     }
                     tab.addEventListener('click', () => switchSchoolTab(school.id));
+                    tab.addEventListener('dragstart', handleTabDragStart);
+                    tab.addEventListener('dragover', handleTabDragOver);
+                    tab.addEventListener('dragleave', handleTabDragLeave);
+                    tab.addEventListener('drop', handleTabDrop);
                     schoolTabsContainer.appendChild(tab);
                 });
 
@@ -1190,6 +1201,62 @@
                 updateDashboard();
                 adjustOverlappingClasses();
             }
+
+            // --- SCHOOL TAB DRAG & DROP HANDLERS ---
+            function handleTabDragStart(e) {
+                draggedTabId = e.target.dataset.id;
+                e.dataTransfer.effectAllowed = 'move';
+                e.target.style.opacity = '0.5';
+            }
+
+            function handleTabDragOver(e) {
+                e.preventDefault();
+                const targetTab = e.target.closest('.school-tab');
+                if (targetTab && targetTab.dataset.id !== ALL_SCHOOLS_ID && targetTab.dataset.id !== draggedTabId) {
+                    e.dataTransfer.dropEffect = 'move';
+                    targetTab.classList.add('tab-drag-over');
+                }
+            }
+
+            function handleTabDragLeave(e) {
+                const targetTab = e.target.closest('.school-tab');
+                if (targetTab) {
+                    targetTab.classList.remove('tab-drag-over');
+                }
+            }
+
+            function handleTabDrop(e) {
+                e.preventDefault();
+                const targetTab = e.target.closest('.school-tab');
+                if (targetTab) {
+                    targetTab.classList.remove('tab-drag-over');
+                }
+                const droppedOnTabId = targetTab ? targetTab.dataset.id : null;
+
+                if (!draggedTabId || !droppedOnTabId || draggedTabId === droppedOnTabId || droppedOnTabId === ALL_SCHOOLS_ID) {
+                    return;
+                }
+
+                const draggedIndex = appData.schools.findIndex(s => s.id === draggedTabId);
+                const targetIndex = appData.schools.findIndex(s => s.id === droppedOnTabId);
+
+                if (draggedIndex > 0 && targetIndex > 0) { // Ensure we don't move "All Schools"
+                    const [draggedItem] = appData.schools.splice(draggedIndex, 1);
+                    const newTargetIndex = appData.schools.findIndex(s => s.id === droppedOnTabId);
+                    appData.schools.splice(newTargetIndex, 0, draggedItem);
+                    
+                    saveData();
+                    renderSchoolTabs();
+                }
+            }
+
+            document.addEventListener('dragend', (e) => {
+                draggedTabId = null;
+                document.querySelectorAll('.school-tab').forEach(tab => {
+                    tab.style.opacity = '1';
+                    tab.classList.remove('tab-drag-over');
+                });
+            });
 
             // --- Let's go! ---
             initializeApp();
