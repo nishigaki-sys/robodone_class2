@@ -370,7 +370,7 @@
                 if (data.startSemester) {
                     data.schools.forEach(school => {
                         if (school.id !== ALL_SCHOOLS_ID && !school.startSemester) {
-                            school.startSemester = { ...data.startSemester };
+                            school.startSemester = JSON.parse(JSON.stringify(data.startSemester));
                         }
                     });
                     delete data.startSemester;
@@ -548,11 +548,11 @@
                     const firstSchool = appData.schools.find(s => s.id !== ALL_SCHOOLS_ID);
                     if(firstSchool && firstSchool.startSemester) {
                         generateSemesters(firstSchool.startSemester.year, firstSchool.startSemester.season);
-                        currentSemesterId = semesters[0].id;
+                        currentSemesterId = semesters[0]?.id || '';
                     } else {
                         // Fallback if no schools exist
                         generateSemesters(2025, 'autumn');
-                        currentSemesterId = semesters[0].id;
+                        currentSemesterId = semesters[0]?.id || '';
                     }
                     updateDashboard();
                 }
@@ -1036,24 +1036,24 @@
                 const classIndex = (classroomSchedules[currentSemesterId] || []).findIndex(c => c.id === editingClassId);
                 if (classIndex === -1) return;
 
-                const classData = classroomSchedules[currentSemesterId][classIndex];
                 const newClassroomId = document.querySelector('input[name="classroom"]:checked').value;
                 const newDay = daySelect.value, newTime = timeSelect.value;
                 const newCapacity = parseInt(capacityInput.value) || 0, newStudents = parseInt(studentsInput.value) || 0;
                 const newPromotionTiming = document.querySelector('input[name="promotionTiming"]:checked').value;
-                const hasMoved = classData.day !== newDay || classData.time !== newTime;
-                const hasSwitchedClassroom = originClassroomId !== newClassroomId;
-
-                if (hasSwitchedClassroom) {
-                    if (isSlotOccupied(newDay, newTime, courseInfo[classData.course].duration, newClassroomId, null)) {
+                
+                if (originClassroomId !== newClassroomId) {
+                    if (isSlotOccupied(newDay, newTime, courseInfo[classroomSchedules[currentSemesterId][classIndex].course].duration, newClassroomId, null)) {
                         alert(`移動先の教室の指定された時間帯は既に埋まっています。`); return;
                     }
-                    const [movedClass] = classroomSchedules[currentSemesterId].splice(classIndex, 1);
-                    Object.assign(movedClass, { classroomId: newClassroomId, day: newDay, time: newTime, capacity: newCapacity, students: newStudents, promotionTiming: newPromotionTiming });
+                    const [movedClassData] = classroomSchedules[currentSemesterId].splice(classIndex, 1);
+                    const newClassData = JSON.parse(JSON.stringify(movedClassData));
+                    Object.assign(newClassData, { classroomId: newClassroomId, day: newDay, time: newTime, capacity: newCapacity, students: newStudents, promotionTiming: newPromotionTiming });
                     const targetSchedule = getClassroomSchedules(newClassroomId);
                     targetSchedule[currentSemesterId] = targetSchedule[currentSemesterId] || [];
-                    targetSchedule[currentSemesterId].push(movedClass);
+                    targetSchedule[currentSemesterId].push(newClassData);
                 } else {
+                    const classData = classroomSchedules[currentSemesterId][classIndex];
+                    const hasMoved = classData.day !== newDay || classData.time !== newTime;
                     if (hasMoved && isSlotOccupied(newDay, newTime, courseInfo[classData.course].duration, originClassroomId, editingClassId)) {
                         alert('移動先の時間帯は他のクラスと重複しています。'); return;
                     }
