@@ -541,13 +541,17 @@
                 saveData();
                 renderSchoolTabs();
                 
-                if (school.id !== ALL_SCHOOLS_ID) {
+                if (school && school.id !== ALL_SCHOOLS_ID) {
                     setupSemestersAndUI();
                 } else {
                     // For "All Schools", we can use the first school's semester settings for display consistency
                     const firstSchool = appData.schools.find(s => s.id !== ALL_SCHOOLS_ID);
-                    if(firstSchool) {
+                    if(firstSchool && firstSchool.startSemester) {
                         generateSemesters(firstSchool.startSemester.year, firstSchool.startSemester.season);
+                        currentSemesterId = semesters[0].id;
+                    } else {
+                        // Fallback if no schools exist
+                        generateSemesters(2025, 'autumn');
                         currentSemesterId = semesters[0].id;
                     }
                     updateDashboard();
@@ -943,10 +947,16 @@
                     } else {
                         semestersInCourse++;
                     }
-                    nextSemesterSchedule.push({ ...item, course: nextCourse, semestersInCourse, isPromoted: true });
+                    // DEEP COPY to prevent reference sharing between schools
+                    const newItem = JSON.parse(JSON.stringify(item));
+                    newItem.course = nextCourse;
+                    newItem.semestersInCourse = semestersInCourse;
+                    newItem.isPromoted = true;
+                    nextSemesterSchedule.push(newItem);
                 });
                 classroomSchedules[semesterId] = nextSemesterSchedule;
-                classroomPromoted[semesterId] = [...nextSemesterSchedule];
+                // Deep copy here as well to be completely safe
+                classroomPromoted[semesterId] = JSON.parse(JSON.stringify(nextSemesterSchedule));
             }
 
             function switchSemester(semesterId, isSetup = false) {
@@ -1282,7 +1292,7 @@
                 if (draggedItem.classList.contains('class-item')) { // Moving an existing class
                     const schedule = classroomSchedules[currentSemesterId];
                     const classIndex = schedule.findIndex(c => c.id === draggedId);
-                    classData = { ...schedule[classIndex] };
+                    classData = JSON.parse(JSON.stringify(schedule[classIndex]));
                     schedule.splice(classIndex, 1);
                     classData.day = dropZone.dataset.day;
                     classData.time = dropZone.dataset.time;
@@ -1292,7 +1302,11 @@
                     if (draggedItem.dataset.promoted === 'true' && draggedId) {
                         const bank = classroomPromoted[currentSemesterId] || [];
                         const originalClassData = bank.find(c => c.id === draggedId);
-                        if(originalClassData) classData = { ...originalClassData, day: dropZone.dataset.day, time: dropZone.dataset.time };
+                        if(originalClassData) {
+                             classData = JSON.parse(JSON.stringify(originalClassData));
+                             classData.day = dropZone.dataset.day;
+                             classData.time = dropZone.dataset.time;
+                        }
                     } else {
                         classData = {
                             id: crypto.randomUUID(), course: courseName, day: dropZone.dataset.day, time: dropZone.dataset.time,
