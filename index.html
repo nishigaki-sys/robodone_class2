@@ -357,13 +357,42 @@
                 localStorage.setItem('robodanMultiSchoolData', JSON.stringify(appData));
             }
 
+            function migrateAndValidateData(data) {
+                if (!data.schools) {
+                    data.schools = [];
+                }
+
+                if (!data.schools.find(s => s.id === ALL_SCHOOLS_ID)) {
+                    data.schools.unshift({ id: ALL_SCHOOLS_ID, name: 'すべての校舎' });
+                }
+
+                // Migration from global startSemester to per-school
+                if (data.startSemester) {
+                    data.schools.forEach(school => {
+                        if (school.id !== ALL_SCHOOLS_ID && !school.startSemester) {
+                            school.startSemester = { ...data.startSemester };
+                        }
+                    });
+                    delete data.startSemester;
+                }
+
+                // Ensure every school has a startSemester property
+                data.schools.forEach(school => {
+                    if (school.id !== ALL_SCHOOLS_ID && !school.startSemester) {
+                        school.startSemester = { year: 2025, season: 'autumn' };
+                    }
+                });
+                
+                return data;
+            }
+
             function loadData() {
                 const savedData = localStorage.getItem('robodanMultiSchoolData');
                 if (savedData) {
                     appData = JSON.parse(savedData);
                 }
                 
-                if (!appData.schools || appData.schools.length === 0) {
+                if (!appData.schools || appData.schools.length <= 1) { // <= 1 to account for ALL_SCHOOLS_ID
                     const firstSchoolId = crypto.randomUUID();
                     appData = {
                         schools: [
@@ -378,32 +407,15 @@
                         ],
                         currentSchoolId: ALL_SCHOOLS_ID
                     };
-                    saveData();
+                }
+                
+                appData = migrateAndValidateData(appData);
+
+                if (!appData.currentSchoolId || !appData.schools.find(s => s.id === appData.currentSchoolId)) {
+                   appData.currentSchoolId = ALL_SCHOOLS_ID;
                 }
 
-                 // Migration for older data structure
-                if (appData.startSemester) {
-                    appData.schools.forEach(school => {
-                        if (school.id !== ALL_SCHOOLS_ID && !school.startSemester) {
-                            school.startSemester = { ...appData.startSemester };
-                        }
-                    });
-                    delete appData.startSemester; // Delete the global one
-                    saveData();
-                }
-                appData.schools.forEach(school => {
-                    if (school.id !== ALL_SCHOOLS_ID && !school.startSemester) {
-                         school.startSemester = { year: 2025, season: 'autumn' };
-                    }
-                });
-
-
-                 if (!appData.schools.find(s => s.id === ALL_SCHOOLS_ID)) {
-                    appData.schools.unshift({ id: ALL_SCHOOLS_ID, name: 'すべての校舎' });
-                 }
-                 if (!appData.currentSchoolId) {
-                    appData.currentSchoolId = ALL_SCHOOLS_ID;
-                }
+                saveData();
             }
 
             // --- SCHOOL & SEMESTER MANAGEMENT ---
@@ -534,8 +546,10 @@
                 } else {
                     // For "All Schools", we can use the first school's semester settings for display consistency
                     const firstSchool = appData.schools.find(s => s.id !== ALL_SCHOOLS_ID);
-                    generateSemesters(firstSchool.startSemester.year, firstSchool.startSemester.season);
-                    currentSemesterId = semesters[0].id;
+                    if(firstSchool) {
+                        generateSemesters(firstSchool.startSemester.year, firstSchool.startSemester.season);
+                        currentSemesterId = semesters[0].id;
+                    }
                     updateDashboard();
                 }
             }
@@ -1199,11 +1213,11 @@
 
                 function handleAllSchoolsImport(data) {
                     if (!confirm('現在のすべての校舎データを上書きしてインポートします。よろしいですか？')) return;
-                    if (data.schools && data.currentSchoolId) {
-                        appData = data;
-                        if (!appData.schools.find(s => s.id === ALL_SCHOOLS_ID)) {
-                           appData.schools.unshift({ id: ALL_SCHOOLS_ID, name: 'すべての校舎' });
-                        }
+                    
+                    const validatedData = migrateAndValidateData(data);
+
+                    if (validatedData.schools && validatedData.currentSchoolId) {
+                        appData = validatedData;
                         saveData();
                         setupSemestersAndUI();
                         renderSchoolTabs();
