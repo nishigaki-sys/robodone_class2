@@ -101,6 +101,11 @@
                     ロボ団「<span id="schoolNameDisplay" class="text-blue-600"></span>」開講クラス
                 </h1>
             </header>
+
+            <div class="mb-4">
+                <div id="semesterSelector" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-10 gap-2">
+                    </div>
+            </div>
     
             <div id="schoolTabsContainer" class="border-b-2 border-slate-200 flex items-center gap-2 flex-wrap">
                 </div>
@@ -109,12 +114,6 @@
 
         <div class="mt-8 bg-white p-6 rounded-2xl shadow-lg">
             <h2 class="text-2xl font-bold text-slate-900 mb-4">クラスサマリー</h2>
-
-            <div class="mb-6 pb-6 border-b border-slate-200">
-                <h3 class="text-lg font-bold mb-3 text-slate-800">学期を選択</h3>
-                <div id="semesterSelector" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
-                    </div>
-            </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
                 <div class="bg-blue-50 p-4 rounded-lg">
@@ -457,7 +456,7 @@
             }
             
             function switchSchoolTab(schoolId) {
-                if (appData.currentSchoolId !== ALL_SCHOOLS_ID) {
+                if (appData.currentSchoolId !== ALL_SCHOOLS_ID && appData.currentSchoolId) {
                     saveCurrentSchedule({invalidate: false});
                 }
                 appData.currentSchoolId = schoolId;
@@ -468,17 +467,12 @@
                 
                 const isAllSchoolsView = schoolId === ALL_SCHOOLS_ID;
                 const timetableMain = document.querySelector('#mainContent main');
-
-                // Hide/show relevant parts instead of the whole mainContent
+                
                 sidePanel.style.display = isAllSchoolsView ? 'none' : 'block';
                 timetableMain.style.display = isAllSchoolsView ? 'none' : 'block';
                 allSchoolsMessage.style.display = isAllSchoolsView ? 'block' : 'none';
 
                 classroomSelector.style.display = isAllSchoolsView ? 'none' : 'flex';
-                resetBtn.disabled = isAllSchoolsView;
-                importSchoolBtn.disabled = isAllSchoolsView;
-                exportSchoolBtn.disabled = isAllSchoolsView;
-
 
                 saveData();
                 renderSchoolTabs();
