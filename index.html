@@ -412,7 +412,7 @@
                 addBtn.textContent = '+ 校舎を追加';
                 addBtn.addEventListener('click', addSchool);
                 schoolTabsContainer.appendChild(addBtn);
-                adjustStickyHeaders(); // Adjust headers after tabs are rendered
+                adjustStickyHeaders();
             }
 
             function addSchool() {
@@ -573,10 +573,20 @@
                     classEl.addEventListener('dragstart', handleDragStart);
                     classEl.querySelector('.delete-btn').addEventListener('click', (e) => {
                         e.stopPropagation();
-                        const classData = (getClassroomSchedules(currentClassroomId)[currentSemesterId] || []).find(c => c.id === classEl.dataset.id);
-                        if (classData && !classData.isPromoted) invalidateFuture(currentSemesterId);
+                        
+                        const classIdToRemove = classEl.dataset.id;
+                        const schedule = getClassroomSchedules(currentClassroomId)[currentSemesterId] || [];
+                        const classIndex = schedule.findIndex(c => c.id === classIdToRemove);
+
+                        if (classIndex > -1) {
+                            const [removedClass] = schedule.splice(classIndex, 1);
+                            if (removedClass && !removedClass.isPromoted) {
+                                invalidateFuture(currentSemesterId);
+                            }
+                            saveData(); // Save immediately
+                        }
+                        
                         classEl.remove();
-                        saveCurrentSchedule();
                         updatePromotedBank(currentSemesterId);
                         updateNumbering();
                         updateDashboard();
@@ -972,7 +982,7 @@
                     }).then(canvas => {
                         const imageData = canvas.toDataURL('image/png');
                         const pdf = new jsPDF({
-                            orientation: 'portrait', // Changed from 'landscape'
+                            orientation: 'portrait',
                             unit: 'mm',
                             format: 'a4'
                         });
@@ -1044,10 +1054,8 @@
                 const newDay = daySelect.value, newTime = timeSelect.value;
                 const newCapacity = parseInt(capacityInput.value) || 0, newStudents = parseInt(studentsInput.value) || 0;
                 const newPromotionTiming = document.querySelector('input[name="promotionTiming"]:checked').value;
-                const hasMoved = classData.day !== newDay || classData.time !== newTime;
-                const hasSwitchedClassroom = originClassroomId !== newClassroomId;
-
-                if (hasSwitchedClassroom) {
+                
+                if (originClassroomId !== newClassroomId) {
                     if (isSlotOccupied(newDay, newTime, courseInfo[classData.course].duration, newClassroomId, null)) {
                         alert(`移動先の教室の指定された時間帯は既に埋まっています。`); return;
                     }
@@ -1057,14 +1065,15 @@
                     targetSchedule[currentSemesterId] = targetSchedule[currentSemesterId] || [];
                     targetSchedule[currentSemesterId].push(movedClass);
                 } else {
-                    if (hasMoved && isSlotOccupied(newDay, newTime, courseInfo[classData.course].duration, originClassroomId, editingClassId)) {
+                    if ((classData.day !== newDay || classData.time !== newTime) && isSlotOccupied(newDay, newTime, courseInfo[classData.course].duration, originClassroomId, editingClassId)) {
                         alert('移動先の時間帯は他のクラスと重複しています。'); return;
                     }
                     Object.assign(classData, { day: newDay, time: newTime, capacity: newCapacity, students: newStudents, promotionTiming: newPromotionTiming });
                 }
+
                 invalidateFuture(currentSemesterId);
+                saveData(); // Save immediately after data mutation
                 loadSchedule(currentSemesterId);
-                saveCurrentSchedule({invalidate: false});
                 updateDashboard();
                 closeDetailModal();
             }
@@ -1096,6 +1105,7 @@
                 
                 // Event Listeners
                 window.addEventListener('resize', adjustStickyHeaders);
+                // Add an event listener to save data before the user leaves the page
                 window.addEventListener('beforeunload', () => {
                     saveCurrentSchedule({ invalidate: false });
                 });
@@ -1243,41 +1253,46 @@
                 const courseName = draggedItem.dataset.course;
                 const duration = courseInfo[courseName].duration;
                 const draggedId = draggedItem.dataset.id;
-                if (isSlotOccupied(dropZone.dataset.day, dropZone.dataset.time, duration, currentClassroomId, draggedId)) return;
                 
                 let classData, isNewClass = false;
                 const classroomSchedules = getClassroomSchedules(currentClassroomId);
-                const classroomPromoted = getClassroomPromotedClasses(currentClassroomId);
-
+                
                 if (draggedItem.classList.contains('class-item')) { // Moving an existing class
+                    if (isSlotOccupied(dropZone.dataset.day, dropZone.dataset.time, duration, currentClassroomId, draggedId)) return;
                     const schedule = classroomSchedules[currentSemesterId];
                     const classIndex = schedule.findIndex(c => c.id === draggedId);
-                    classData = { ...schedule[classIndex] };
-                    schedule.splice(classIndex, 1);
+                    classData = schedule[classIndex];
                     classData.day = dropZone.dataset.day;
                     classData.time = dropZone.dataset.time;
                     draggedItem.remove();
                 } else { // Adding a new class from a bank
+                    if (isSlotOccupied(dropZone.dataset.day, dropZone.dataset.time, duration, currentClassroomId, null)) return;
                     isNewClass = true;
                     if (draggedItem.dataset.promoted === 'true' && draggedId) {
-                        const bank = classroomPromoted[currentSemesterId] || [];
+                        const bank = getClassroomPromotedClasses(currentClassroomId)[currentSemesterId] || [];
                         const originalClassData = bank.find(c => c.id === draggedId);
-                        if(originalClassData) classData = { ...originalClassData, day: dropZone.dataset.day, time: dropZone.dataset.time };
+                        if(originalClassData) {
+                            classData = { ...originalClassData, day: dropZone.dataset.day, time: dropZone.dataset.time };
+                            classroomSchedules[currentSemesterId] = classroomSchedules[currentSemesterId] || [];
+                            classroomSchedules[currentSemesterId].push(classData);
+                        }
                     } else {
                         classData = {
                             id: crypto.randomUUID(), course: courseName, day: dropZone.dataset.day, time: dropZone.dataset.time,
                             isPromoted: false, capacity: 8, students: 0, promotionTiming: '4月', semestersInCourse: 1,
                             creationSemesterId: currentSemesterId, classroomId: currentClassroomId
                         };
+                        classroomSchedules[currentSemesterId] = classroomSchedules[currentSemesterId] || [];
+                        classroomSchedules[currentSemesterId].push(classData);
                     }
                 }
                 
                 if(!classData) return;
-                classroomSchedules[currentSemesterId] = classroomSchedules[currentSemesterId] || [];
-                classroomSchedules[currentSemesterId].push(classData);
-                dropZone.appendChild(createClassElement(classData));
+                
                 if(isNewClass && !classData.isPromoted) invalidateFuture(currentSemesterId);
-                saveCurrentSchedule();
+                saveData(); // Save immediately
+
+                dropZone.appendChild(createClassElement(classData));
                 updatePromotedBank(currentSemesterId);
                 updateNumbering();
                 updateDashboard();
