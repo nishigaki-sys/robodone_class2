@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ロボ団 開講クラス</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         body {
@@ -170,6 +172,7 @@
                             </div>
                             <button id="resetBtn" class="w-full mt-2 px-3 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 disabled:hover:bg-red-100">この校舎をリセット</button>
                             <input type="file" id="importFile" class="hidden" accept=".json">
+                            <button id="exportPdfBtn" class="w-full mt-2 px-3 py-2 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200">PDFでエクスポート</button>
                         </div>
                     </div>
                 </div>
@@ -317,6 +320,7 @@
             const exportSchoolBtn = document.getElementById('exportSchoolBtn');
             const importAllBtn = document.getElementById('importAllBtn');
             const exportAllBtn = document.getElementById('exportAllBtn');
+            const exportPdfBtn = document.getElementById('exportPdfBtn');
             
             // --- STATE MANAGEMENT ---
             let appData = {};
@@ -940,6 +944,67 @@
                     switchSemester(semesters[0].id, true);
                 }
             }
+            
+            function handleExportPdf() {
+                const { jsPDF } = window.jspdf;
+                const btn = document.getElementById('exportPdfBtn');
+                const originalBtnText = btn.innerHTML;
+                btn.innerHTML = '作成中...';
+                btn.disabled = true;
+
+                const captureElement = document.querySelector('.container');
+                const elementsToHide = [document.getElementById('sidePanel'), document.getElementById('classroomSelector')];
+                const originalDisplays = elementsToHide.map(el => el.style.display);
+                
+                elementsToHide.forEach(el => {
+                    if (el.style.display !== 'none') {
+                        el.style.display = 'none';
+                    }
+                });
+                
+                setTimeout(() => {
+                    html2canvas(captureElement, {
+                        scale: 2,
+                        windowWidth: document.body.scrollWidth,
+                        windowHeight: document.body.scrollHeight,
+                        y: 0,
+                        scrollY: -window.scrollY
+                    }).then(canvas => {
+                        const imageData = canvas.toDataURL('image/png');
+                        const pdf = new jsPDF({
+                            orientation: 'landscape',
+                            unit: 'mm',
+                            format: 'a4'
+                        });
+
+                        const pdfWidth = pdf.internal.pageSize.getWidth();
+                        const pdfHeight = pdf.internal.pageSize.getHeight();
+                        const canvasRatio = canvas.width / canvas.height;
+                        
+                        let renderWidth = pdfWidth;
+                        let renderHeight = pdfWidth / canvasRatio;
+
+                        if (renderHeight > pdfHeight) {
+                            renderHeight = pdfHeight;
+                            renderWidth = pdfHeight * canvasRatio;
+                        }
+                        
+                        pdf.addImage(imageData, 'PNG', 0, 0, renderWidth, renderHeight);
+                        
+                        const school = getCurrentSchool();
+                        const semester = semesters.find(s => s.id === currentSemesterId);
+                        const fileName = `ロボ団_${school.name.replace(/\s/g, '')}_${semester.name.replace(/\s/g, '')}.pdf`;
+                        pdf.save(fileName);
+
+                    }).finally(() => {
+                        elementsToHide.forEach((el, index) => {
+                            el.style.display = originalDisplays[index];
+                        });
+                        btn.innerHTML = originalBtnText;
+                        btn.disabled = false;
+                    });
+                }, 100);
+            }
 
             function openDetailModal(classId) {
                 editingClassId = classId;
@@ -1035,6 +1100,7 @@
                 saveBtn.addEventListener('click', saveClassDetails);
                 closeBtn.addEventListener('click', closeDetailModal);
                 modalBackdrop.addEventListener('click', closeDetailModal);
+                exportPdfBtn.addEventListener('click', handleExportPdf);
                 [capacityInput, studentsInput].forEach(el => el.addEventListener('input', updateAvailableSlots));
                 
                 permanentDeleteBtn.addEventListener('click', () => {
