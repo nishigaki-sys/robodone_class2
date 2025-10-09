@@ -95,7 +95,7 @@
 
     <div class="container mx-auto p-4 md:p-8 max-w-screen-2xl">
         
-        <div class="sticky top-0 z-40 bg-slate-50 pt-4 pb-2">
+        <div id="main-sticky-header" class="sticky top-0 z-40 bg-slate-50 pt-4 pb-2">
             <header class="text-center mb-4">
                 <h1 class="text-3xl md:text-4xl font-bold text-slate-900 flex items-center justify-center gap-2 flex-wrap">
                     ロボ団「<span id="schoolNameDisplay" class="text-blue-600"></span>」開講クラス
@@ -408,6 +408,7 @@
                 addBtn.textContent = '+ 校舎を追加';
                 addBtn.addEventListener('click', addSchool);
                 schoolTabsContainer.appendChild(addBtn);
+                adjustStickyHeaders(); // Adjust headers after tabs are rendered
             }
 
             function addSchool() {
@@ -594,12 +595,28 @@
                 return el;
             }
 
+            function adjustStickyHeaders() {
+                const header = document.getElementById('main-sticky-header');
+                if (!header) return;
+                const headerHeight = header.offsetHeight;
+                
+                const dayHeaders = document.querySelectorAll('.day-header');
+                dayHeaders.forEach(th => {
+                    th.style.top = `${headerHeight}px`;
+                });
+
+                const corner = document.getElementById('timetable-corner');
+                if (corner) {
+                    corner.style.top = `${headerHeight}px`;
+                }
+            }
+
             function generateTimetableGrid() {
                 timetable.innerHTML = '';
                 timetable.style.gridTemplateColumns = `minmax(60px, auto) repeat(${days.length}, minmax(120px, 1fr))`;
-                timetable.insertAdjacentHTML('beforeend', '<div class="sticky top-0 left-0 z-30 bg-white"></div>');
+                timetable.insertAdjacentHTML('beforeend', '<div id="timetable-corner" class="sticky left-0 z-30 bg-white"></div>');
                 days.forEach(day => {
-                    timetable.insertAdjacentHTML('beforeend', `<div class="sticky top-0 z-20 bg-slate-100 p-2 text-center font-bold hour-separator">${day}曜日</div>`);
+                    timetable.insertAdjacentHTML('beforeend', `<div class="day-header sticky z-20 bg-slate-100 p-2 text-center font-bold hour-separator">${day}曜日</div>`);
                 });
                 for (let hour = timeRange.start; hour < timeRange.end; hour++) {
                     for (let minute = 0; minute < 60; minute += timeRange.interval) {
@@ -615,6 +632,7 @@
                     slot.addEventListener('dragleave', handleDragLeave);
                     slot.addEventListener('drop', handleDrop);
                 });
+                adjustStickyHeaders();
             }
 
             function saveCurrentSchedule(options = { invalidate: true }) {
@@ -1012,6 +1030,7 @@
                 generateTimetableGrid();
                 
                 // Event Listeners
+                window.addEventListener('resize', adjustStickyHeaders);
                 resetBtn.addEventListener('click', handleReset);
                 saveBtn.addEventListener('click', saveClassDetails);
                 closeBtn.addEventListener('click', closeDetailModal);
@@ -1134,6 +1153,7 @@
                 // Set initial views
                 switchSchoolTab(appData.currentSchoolId);
                 switchClassroom(currentClassroomId, true); 
+                adjustStickyHeaders();
             }
 
             // --- DRAG & DROP HANDLERS ---
