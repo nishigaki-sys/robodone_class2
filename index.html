@@ -352,7 +352,12 @@
             function loadData() {
                 const savedData = localStorage.getItem('robodanMultiSchoolData');
                 if (savedData) {
-                    appData = JSON.parse(savedData);
+                    try {
+                        appData = JSON.parse(savedData);
+                    } catch(e) {
+                        console.error("Could not parse saved data, initializing new data.", e);
+                        appData = {};
+                    }
                 }
                 
                 if (!appData.schools || appData.schools.length === 0) {
@@ -369,14 +374,36 @@
                         ],
                         currentSchoolId: ALL_SCHOOLS_ID
                     };
-                    saveData();
                 }
-                 if (!appData.schools.find(s => s.id === ALL_SCHOOLS_ID)) {
+                
+                if (!appData.schools.find(s => s.id === ALL_SCHOOLS_ID)) {
                      appData.schools.unshift({ id: ALL_SCHOOLS_ID, name: 'すべての校舎' });
-                 }
-                 if (!appData.currentSchoolId) {
-                     appData.currentSchoolId = ALL_SCHOOLS_ID;
-                 }
+                }
+                if (!appData.currentSchoolId || !appData.schools.find(s => s.id === appData.currentSchoolId)) {
+                     appData.currentSchoolId = appData.schools[0].id;
+                }
+                
+                // Ensure first semester is always initialized for all schools/classrooms
+                appData.schools.forEach(school => {
+                    if (school.id !== ALL_SCHOOLS_ID) {
+                        if (!school.schedules) school.schedules = { classroom1: {}, classroom2: {} };
+                        if (!school.promotedClasses) school.promotedClasses = { classroom1: {}, classroom2: {} };
+
+                        ['classroom1', 'classroom2'].forEach(crId => {
+                            if (!school.schedules[crId]) school.schedules[crId] = {};
+                            if (!school.promotedClasses[crId]) school.promotedClasses[crId] = {};
+
+                            if (!school.schedules[crId][semesters[0].id]) {
+                                school.schedules[crId][semesters[0].id] = [];
+                            }
+                            if (!school.promotedClasses[crId][semesters[0].id]) {
+                                school.promotedClasses[crId][semesters[0].id] = [];
+                            }
+                        });
+                    }
+                });
+                
+                saveData();
             }
 
             // --- SCHOOL MANAGEMENT FUNCTIONS ---
@@ -424,6 +451,11 @@
                         name: name,
                         schedules: { classroom1: {}, classroom2: {} },
                         promotedClasses: { classroom1: {}, classroom2: {} }
+                    });
+                    // Initialize the first semester for the new school
+                    ['classroom1', 'classroom2'].forEach(crId => {
+                        appData.schools[appData.schools.length - 1].schedules[crId][semesters[0].id] = [];
+                        appData.schools[appData.schools.length - 1].promotedClasses[crId][semesters[0].id] = [];
                     });
                     switchSchoolTab(newSchoolId);
                 }
@@ -583,7 +615,7 @@
                             if (removedClass && !removedClass.isPromoted) {
                                 invalidateFuture(currentSemesterId);
                             }
-                            saveData(); // Save immediately
+                            saveData();
                         }
                         
                         classEl.remove();
@@ -658,25 +690,26 @@
                 timetable.querySelectorAll('.class-item:not(.class-item-inactive)').forEach(el => {
                     const slot = el.parentElement;
                     const id = el.dataset.id;
-                    const existingDataInSchedule = (classroomSchedules[currentSemesterId] || []).find(c => c.id === id);
-                    const existingDataInPromoted = (getClassroomPromotedClasses(currentClassroomId)[currentSemesterId] || []).find(c => c.id === id);
-                    const existingData = existingDataInSchedule || existingDataInPromoted || {};
+                    const scheduleForSemester = classroomSchedules[currentSemesterId] || [];
+                    const existingData = scheduleForSemester.find(c => c.id === id);
 
-                    classes.push({
-                        id, course: el.dataset.course, day: slot.dataset.day, time: slot.dataset.time,
-                        isPromoted: el.dataset.promoted === 'true',
-                        capacity: existingData.capacity || 8,
-                        students: existingData.students || 0,
-                        promotionTiming: existingData.promotionTiming || '4月',
-                        semestersInCourse: existingData.semestersInCourse || 1,
-                        creationSemesterId: existingData.creationSemesterId || currentSemesterId,
-                        classroomId: currentClassroomId
-                    });
+                    if (existingData) {
+                        classes.push({
+                            ...existingData,
+                            day: slot.dataset.day,
+                            time: slot.dataset.time
+                        });
+                    }
                 });
-                classroomSchedules[currentSemesterId] = classes;
                 
-                if (options.invalidate) invalidateFuture(currentSemesterId);
-                saveData();
+                if (classes.length > 0 || (classroomSchedules[currentSemesterId] && classroomSchedules[currentSemesterId].length > 0) ) {
+                    classroomSchedules[currentSemesterId] = classes;
+                    if (options.invalidate) {
+                       const hasNewClasses = timetable.querySelectorAll('.class-item:not(.class-item-inactive):not([data-promoted="true"])').length > 0;
+                       if (hasNewClasses) invalidateFuture(currentSemesterId);
+                    }
+                    saveData();
+                }
             }
             
             function updateNumbering() {
@@ -828,11 +861,11 @@
                 const courseStats = Object.fromEntries(Object.keys(courseInfo).map(key => [key, { capacity: 0, students: 0, classCount: 0 }]));
 
                 schedulesToProcess.forEach(classData => {
-                    totalStudents += classData.students;
-                    totalCapacity += classData.capacity;
+                    totalStudents += (classData.students || 0);
+                    totalCapacity += (classData.capacity || 0);
                     if(courseStats[classData.course]) {
-                        courseStats[classData.course].capacity += classData.capacity;
-                        courseStats[classData.course].students += classData.students;
+                        courseStats[classData.course].capacity += (classData.capacity || 0);
+                        courseStats[classData.course].students += (classData.students || 0);
                         courseStats[classData.course].classCount++;
                     }
                 });
@@ -875,35 +908,37 @@
                 if (classroomSchedules[semesterId]) return;
                 
                 const targetIndex = semesters.findIndex(s => s.id === semesterId);
-                if (targetIndex === 0) {
-                     classroomSchedules[semesterId] = [];
-                     classroomPromoted[semesterId] = [];
-                     return;
+
+                // This block is no longer needed as loadData handles initialization
+                // if (targetIndex === 0) {
+                //      return;
+                // }
+
+                if (targetIndex > 0) {
+                    const prevSemester = semesters[targetIndex - 1];
+                    calculateScheduleFor(school, prevSemester.id, classroomId);
+                    const prevSchedule = classroomSchedules[prevSemester.id] || [];
+                    
+                    const isSpringToAutumn = prevSemester.id.includes('spring');
+                    const nextSemesterSchedule = [];
+                    
+                    prevSchedule.forEach(item => {
+                        let nextCourse = item.course, semestersInCourse = item.semestersInCourse || 1;
+                        const shouldPromote = (isSpringToAutumn && item.promotionTiming === '10月') || (!isSpringToAutumn && item.promotionTiming === '4月');
+
+                        if (shouldPromote) {
+                            if (item.course === 'イノベーター' && semestersInCourse >= 2) return;
+                            const promotedCourse = promotionMap[item.course];
+                            nextCourse = promotedCourse || item.course;
+                            semestersInCourse = promotedCourse ? 1 : semestersInCourse + 1;
+                        } else {
+                            semestersInCourse++;
+                        }
+                        nextSemesterSchedule.push({ ...item, course: nextCourse, semestersInCourse, isPromoted: true });
+                    });
+                    classroomSchedules[semesterId] = nextSemesterSchedule;
+                    classroomPromoted[semesterId] = [...nextSemesterSchedule];
                 }
-
-                const prevSemester = semesters[targetIndex - 1];
-                calculateScheduleFor(school, prevSemester.id, classroomId);
-                const prevSchedule = classroomSchedules[prevSemester.id];
-                
-                const isSpringToAutumn = prevSemester.id.includes('spring');
-                const nextSemesterSchedule = [];
-                
-                prevSchedule.forEach(item => {
-                    let nextCourse = item.course, semestersInCourse = item.semestersInCourse || 1;
-                    const shouldPromote = (isSpringToAutumn && item.promotionTiming === '10月') || (!isSpringToAutumn && item.promotionTiming === '4月');
-
-                    if (shouldPromote) {
-                        if (item.course === 'イノベーター' && semestersInCourse >= 2) return;
-                        const promotedCourse = promotionMap[item.course];
-                        nextCourse = promotedCourse || item.course;
-                        semestersInCourse = promotedCourse ? 1 : semestersInCourse + 1;
-                    } else {
-                        semestersInCourse++;
-                    }
-                    nextSemesterSchedule.push({ ...item, course: nextCourse, semestersInCourse, isPromoted: true });
-                });
-                classroomSchedules[semesterId] = nextSemesterSchedule;
-                classroomPromoted[semesterId] = [...nextSemesterSchedule];
             }
 
             function switchSemester(semesterId, isSetup = false) {
@@ -950,6 +985,11 @@
                 if(confirm(`「${school.name}」の現在のスケジュールをリセットします。よろしいですか？`)) {
                     school.schedules = { classroom1: {}, classroom2: {} };
                     school.promotedClasses = { classroom1: {}, classroom2: {} };
+                    // Re-initialize the first semester
+                    ['classroom1', 'classroom2'].forEach(crId => {
+                        school.schedules[crId][semesters[0].id] = [];
+                        school.promotedClasses[crId][semesters[0].id] = [];
+                    });
                     saveData();
                     switchSemester(semesters[0].id, true);
                 }
@@ -1045,11 +1085,12 @@
             function saveClassDetails() {
                 if (!editingClassId) return;
                 const originClassroomId = currentClassroomId;
-                const classroomSchedules = getClassroomSchedules(originClassroomId);
-                const classIndex = (classroomSchedules[currentSemesterId] || []).findIndex(c => c.id === editingClassId);
+                const classSchedules = getClassroomSchedules(originClassroomId);
+                const schedule = classSchedules[currentSemesterId] || [];
+                const classIndex = schedule.findIndex(c => c.id === editingClassId);
                 if (classIndex === -1) return;
 
-                const classData = classroomSchedules[currentSemesterId][classIndex];
+                const classData = schedule[classIndex];
                 const newClassroomId = document.querySelector('input[name="classroom"]:checked').value;
                 const newDay = daySelect.value, newTime = timeSelect.value;
                 const newCapacity = parseInt(capacityInput.value) || 0, newStudents = parseInt(studentsInput.value) || 0;
@@ -1059,7 +1100,7 @@
                     if (isSlotOccupied(newDay, newTime, courseInfo[classData.course].duration, newClassroomId, null)) {
                         alert(`移動先の教室の指定された時間帯は既に埋まっています。`); return;
                     }
-                    const [movedClass] = classroomSchedules[currentSemesterId].splice(classIndex, 1);
+                    const [movedClass] = schedule.splice(classIndex, 1);
                     Object.assign(movedClass, { classroomId: newClassroomId, day: newDay, time: newTime, capacity: newCapacity, students: newStudents, promotionTiming: newPromotionTiming });
                     const targetSchedule = getClassroomSchedules(newClassroomId);
                     targetSchedule[currentSemesterId] = targetSchedule[currentSemesterId] || [];
@@ -1072,7 +1113,7 @@
                 }
 
                 invalidateFuture(currentSemesterId);
-                saveData(); // Save immediately after data mutation
+                saveData();
                 loadSchedule(currentSemesterId);
                 updateDashboard();
                 closeDetailModal();
@@ -1105,7 +1146,6 @@
                 
                 // Event Listeners
                 window.addEventListener('resize', adjustStickyHeaders);
-                // Add an event listener to save data before the user leaves the page
                 window.addEventListener('beforeunload', () => {
                     saveCurrentSchedule({ invalidate: false });
                 });
@@ -1257,15 +1297,16 @@
                 let classData, isNewClass = false;
                 const classroomSchedules = getClassroomSchedules(currentClassroomId);
                 
-                if (draggedItem.classList.contains('class-item')) { // Moving an existing class
+                if (draggedItem.classList.contains('class-item')) {
                     if (isSlotOccupied(dropZone.dataset.day, dropZone.dataset.time, duration, currentClassroomId, draggedId)) return;
-                    const schedule = classroomSchedules[currentSemesterId];
+                    const schedule = classroomSchedules[currentSemesterId] || [];
                     const classIndex = schedule.findIndex(c => c.id === draggedId);
+                    if (classIndex === -1) return; 
                     classData = schedule[classIndex];
                     classData.day = dropZone.dataset.day;
                     classData.time = dropZone.dataset.time;
                     draggedItem.remove();
-                } else { // Adding a new class from a bank
+                } else {
                     if (isSlotOccupied(dropZone.dataset.day, dropZone.dataset.time, duration, currentClassroomId, null)) return;
                     isNewClass = true;
                     if (draggedItem.dataset.promoted === 'true' && draggedId) {
@@ -1290,7 +1331,7 @@
                 if(!classData) return;
                 
                 if(isNewClass && !classData.isPromoted) invalidateFuture(currentSemesterId);
-                saveData(); // Save immediately
+                saveData();
 
                 dropZone.appendChild(createClassElement(classData));
                 updatePromotedBank(currentSemesterId);
