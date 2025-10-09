@@ -972,7 +972,7 @@
                     }).then(canvas => {
                         const imageData = canvas.toDataURL('image/png');
                         const pdf = new jsPDF({
-                            orientation: 'portrait',
+                            orientation: 'portrait', // Changed from 'landscape'
                             unit: 'mm',
                             format: 'a4'
                         });
@@ -1096,6 +1096,9 @@
                 
                 // Event Listeners
                 window.addEventListener('resize', adjustStickyHeaders);
+                window.addEventListener('beforeunload', () => {
+                    saveCurrentSchedule({ invalidate: false });
+                });
                 resetBtn.addEventListener('click', handleReset);
                 saveBtn.addEventListener('click', saveClassDetails);
                 closeBtn.addEventListener('click', closeDetailModal);
